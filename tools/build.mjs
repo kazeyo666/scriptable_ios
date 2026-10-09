@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const body = ["src/logic.js", "src/widget-geometry.js", "src/background.js", "src/dashboard.js", "src/runtime.js"].map(path => readFileSync(resolve(root, path), "utf8")).join("\n");
+const body = ["src/logic.js", "src/widget-geometry.js", "src/background.js", "src/calibration.js", "src/dashboard.js", "src/runtime.js"].map(path => readFileSync(resolve(root, path), "utf8")).join("\n");
 const scripts = { "parcel-list": "parcels", "train-tickets": "trains", "countdown-list": "countdowns", dashboard: "dashboard" };
 const check = process.argv.includes("--check");
 for (const [name, kind] of Object.entries(scripts)) {

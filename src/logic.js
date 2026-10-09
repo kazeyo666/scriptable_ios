@@ -75,7 +75,7 @@ const InfoLogic = (() => {
       calendar: { enabled: false, days: 7 } };
   }
   function backgroundDefaults() {
-    return { mode: "theme", text: "light", dim: 0.25, photo: null, transparent: { small: null, medium: null, large: null } };
+    return { mode: "theme", text: "light", dim: 0.25, photo: null, transparent: { small: null, medium: null, large: null }, calibration: { small: null, medium: null, large: null } };
   }
   function validateBackground(value) {
     if (value === undefined) return backgroundDefaults(); // 兼容此前保存的配置和备份。
@@ -85,7 +85,16 @@ const InfoLogic = (() => {
     assert(value.transparent && typeof value.transparent === "object", "透明背景配置无效");
     const transparent = {};
     for (const family of ["small", "medium", "large"]) transparent[family] = file(value.transparent[family]);
-    return { mode: value.mode, text: value.text, dim: value.dim, photo: file(value.photo), transparent };
+    const calibration = {};
+    for (const family of ["small", "medium", "large"]) {
+      const entry = value.calibration?.[family];
+      if (entry === undefined || entry === null) { calibration[family] = null; continue; }
+      assert(entry && Number.isInteger(entry.width) && Number.isInteger(entry.height) && entry.width >= 100 && entry.height >= 100
+        && entry.width * entry.height <= 24000000 && Number.isInteger(entry.position) && entry.position >= 0
+        && entry.position < (family === "small" ? 6 : family === "medium" ? 3 : 2), "背景校准配置无效");
+      calibration[family] = { width: entry.width, height: entry.height, position: entry.position, rect: cropRect(entry.rect, entry) };
+    }
+    return { mode: value.mode, text: value.text, dim: value.dim, photo: file(value.photo), transparent, calibration };
   }
   function cropRect(rect, size) {
     assert(size && Number.isFinite(size.width) && Number.isFinite(size.height) && size.width > 0 && size.height > 0, "图片尺寸无效");

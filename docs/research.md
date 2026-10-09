@@ -42,3 +42,9 @@ dompling 的物流示例依赖账户 Cookie/BoxJS，不能当作官方稳定接�
 `src/widget-geometry.js` 的桌面像素测量表改编自 [mzeryck/Widget-Blur/widget-blur.js](https://github.com/mzeryck/Widget-Blur/blob/main/widget-blur.js)，依据其 [MIT 许可证](https://github.com/mzeryck/Widget-Blur/blob/main/LICENSE.md) 允许复用，保留 Copyright (c) 2022 Maxwell Zeryck 与完整 MIT 声明；构建后的四个独立脚本也包含声明。只复用测量值，未复用 StackBlur 算法。上游明确部分测量在 iOS 18 确认，其他为旧系统测量；本项目不宣称新系统所有布局已真机验证。
 
 裁剪算法按截图宽高匹配测量表，选择有名称/无名称布局或 mini/X 区分，然后按组件尺寸和位置取得矩形。大号底部使用 middle 起点；无法匹配的分辨率不猜测。通过原生 DrawContext 保存 PNG，读回校验后直接同尺寸预览，移除 WebView 手动裁剪流程。
+
+## 新系统本机校准
+
+[Apple iPhone 17 技术规格](https://www.apple.com.cn/iphone-17/specs/) 确认屏幕为 1206×2622，恰与旧尺寸表的部分设备共用分辨率；该规格不提供桌面组件边界，不能推导 iOS 27 下的精确裁剪坐标。用户反馈实际壁纸已显示但边缘错位，未找到足以验证这套新系统布局的官方桌面测量数据。
+
+新增自主编写的 `src/calibration.js`：通过 `calibrate` 参数呈现紫色组件，在本地 WebView/Canvas 内解码用户本机校准截图，使用颜色连通区域、矩形大小/长宽比/覆盖率限制取得唯一对应矩形，再从同尺寸空白壁纸截图裁剪。没有向服务器发送截图，不能读取其他 App 或系统桌面内部布局。旧表继续用于明确选用的旧系统路径；新系统优先本机校准。iPhone 最终合成的边框及着色效果需真机验证。

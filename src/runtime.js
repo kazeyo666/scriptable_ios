@@ -365,30 +365,64 @@ function createInfoSuite() {
       throw error;
     }
   }
+  const backgroundPositions = family => family === "small" ? ["顶部左侧", "顶部右侧", "中间左侧", "中间右侧", "底部左侧", "底部右侧"]
+    : family === "large" ? ["顶部", "底部"] : ["顶部", "中间", "底部"];
+  async function calibrationMenu() {
+    const action = await choose("本机自动校准透明背景", ["查看校准步骤", "导入校准截图并自动裁剪"], "识别紫色组件的真实边界，适用于新机型、新 iOS 和显示缩放。全程本机处理，不需要手动裁剪。");
+    if (action < 0) return;
+    if (action === 0) {
+      await notify("准备两张截图", "1. 桌面保持原色图标模式，临时修改 Dashboard 的组件参数为 calibrate；若 Script 选 RemoteLauncher 则填 dashboard|calibrate。\n2. 紫色校准组件显示后，在当前位置截完整桌面图。请只保留一个对应尺寸的紫色组件。\n3. 再截一张同壁纸的空白桌面图（不预裁剪）。\n4. 返回此入口选择导入校准截图，再选择空白壁纸截图。保存后把参数改回 default（入口为 dashboard|default）。若校准色尚未出现，重新选择组件 Script 并等系统刷新。");
+      return;
+    }
+    const size = await choose("校准组件尺寸", ["大号", "中号", "小号"]); if (size < 0) return;
+    const family = ["large", "medium", "small"][size];
+    const position = await choose("校准组件的位置", backgroundPositions(family), "选择当前紫色组件所在位置，程序自动测量截图中的真实边界。"); if (position < 0) return;
+    await notify("先选择校准截图", "下一步请选择含紫色校准组件的完整桌面截图。不要选择之前的普通组件截图。");
+    let reference; try { reference = await Photos.fromLibrary(); } catch (_) { return; }
+    const rect = await measureInfoCalibration(reference, family);
+    await notify("再选择空白壁纸截图", "组件边界已自动识别。下一步选择同壁纸、同图标大小和缩放的空白桌面完整截图。将从这张图自动裁剪背景。");
+    let image; try { image = await Photos.fromLibrary(); } catch (_) { return; }
+    L.assert(image.size.width === reference.size.width && image.size.height === reference.size.height, "两张截图尺寸不同，请使用本机相同缩放的完整截图");
+    const settings = editable("settings"), bg = settings.background, name = `transparent-${uuid()}.png`;
+    bg.mode = "transparent"; bg.transparent[family] = name;
+    bg.calibration[family] = { width: image.size.width, height: image.size.height, position, rect };
+    saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
+    await notify("本机校准背景已保存", `已按当前桌面实际尺寸裁剪并校验${["大号", "中号", "小号"][size]}背景。请把组件参数改回 default；RemoteLauncher 使用 dashboard|default。同尺寸同位置以后可直接复用校准。换图标大小、缩放或系统布局需重新校准。`);
+    await presentPreview("dashboard", family);
+  }
   async function backgroundMenu() {
     while (true) {
       const settings = editable("settings"), bg = settings.background;
       const savedSizes = ["large", "medium", "small"].map((family, i) => `${["大号", "中号", "小号"][i]}：${bg.transparent[family] ? "已保存" : "未设置"}`).join("、");
-      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览"],
-        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。按内置组件尺寸自动裁剪，无需手动选框。默认/紧凑共用背景。`);
+      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览", "本机自动校准（新系统 / 未对齐）"],
+        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。新系统或未对齐请使用本机自动校准，不直接套旧机型表。默认/紧凑共用背景。`);
       if (action < 0) return;
       if (action === 0) {
+        let allowLegacy = parseInt(Device.systemVersion?.() || "0", 10) < 26;
+        if (parseInt(Device.systemVersion?.() || "0", 10) >= 26 && !Object.values(bg.calibration).some(Boolean)) {
+          const method = await choose("新系统桌面布局", ["本机自动校准（推荐）", "尝试旧系统尺寸表"], "相同屏幕分辨率不代表组件边界相同。iOS 26 及更新版本请优先从本机截图测量，避免壁纸缩放错位。");
+          if (method < 0) continue;
+          if (method === 0) { await calibrationMenu(); continue; }
+          allowLegacy = true;
+        }
         const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。使用本机完整截图，不要预先裁剪。按内置尺寸自动处理；换位置或壁纸后需重做。负一屏请使用图片背景。");
         if (proceed < 0) continue;
         const size = await choose("透明背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
         const family = ["large", "medium", "small"][size];
-        const positions = family === "small" ? ["顶部左侧", "顶部右侧", "中间左侧", "中间右侧", "底部左侧", "底部右侧"]
-          : family === "large" ? ["顶部", "底部"] : ["顶部", "中间", "底部"];
+        const positions = backgroundPositions(family);
         const position = await choose("组件在桌面的位置", positions, "根据位置自动裁剪，大号底部从中间一行开始。"); if (position < 0) continue;
         let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
-        const choices = InfoWidgetGeometry.options(image.size);
-        let variant = choices[0].key;
+        const calibrated = bg.calibration[family];
+        const useCalibration = calibrated && calibrated.position === position && calibrated.width === image.size.width && calibrated.height === image.size.height;
+        L.assert(useCalibration || allowLegacy, "此尺寸、位置或截图分辨率尚未匹配本机校准，请使用本机自动校准，避免套旧尺寸错位");
+        const choices = useCalibration ? [] : InfoWidgetGeometry.options(image.size);
+        let variant = choices[0]?.key;
         if (choices.length > 1) {
           const choice = await choose(image.size.height === 2436 ? "选择 iPhone 型号" : "桌面图标大小", choices.map(item => item.label), "请与当前桌面设置一致，组件宽高和位置会自动匹配。");
           if (choice < 0) continue;
           variant = choices[choice].key;
         }
-        const rect = InfoWidgetGeometry.rect(image.size, family, position, variant);
+        const rect = useCalibration ? L.cropRect(calibrated.rect, image.size) : InfoWidgetGeometry.rect(image.size, family, position, variant);
         const name = `transparent-${uuid()}.png`;
         bg.mode = "transparent"; bg.transparent[family] = name;
         saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
@@ -428,6 +462,7 @@ function createInfoSuite() {
         await notify("背景检查", state.warning || (state.image ? `当前${["大号", "中号", "小号"][size]}背景可读取，图片尺寸 ${state.image.size.width}×${state.image.size.height}。即将预览。` : "当前使用主题纯色背景。请先选择制作透明背景或使用已保存的透明背景。"));
         await presentPreview("dashboard", family);
       }
+      if (action === 8) await calibrationMenu();
     }
   }
   function palette(theme) {
@@ -577,12 +612,14 @@ function createInfoSuite() {
     runningKind = kind;
     const parameter = String(args.widgetParameter || "").trim();
     let parameterError = "";
+    const calibrating = kind === "dashboard" && parameter === "calibrate";
     if (kind === "dashboard") {
-      if (["", "default", "compact"].includes(parameter)) activeProfile = parameter || "default";
-      else parameterError = "面板参数只能为 default 或 compact";
+      if (["", "default", "compact", "calibrate"].includes(parameter)) activeProfile = calibrating ? "default" : parameter || "default";
+      else parameterError = "面板参数只能为 default、compact 或校准用 calibrate";
     }
     if (config.runsInWidget) {
-      if (parameterError) {
+      if (calibrating) Script.setWidget(renderInfoCalibrationWidget());
+      else if (parameterError) {
         const widget = new ListWidget(); widget.addText(parameterError); Script.setWidget(widget);
       } else Script.setWidget(render(kind));
     } else if (config.runsInApp) {

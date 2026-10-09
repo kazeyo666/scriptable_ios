@@ -7,12 +7,13 @@ export const runtimeSource = readFileSync(new URL("../src/runtime.js", import.me
 export const dashboardSource = readFileSync(new URL("../src/dashboard.js", import.meta.url), "utf8");
 export const backgroundSource = readFileSync(new URL("../src/background.js", import.meta.url), "utf8");
 export const geometrySource = readFileSync(new URL("../src/widget-geometry.js", import.meta.url), "utf8");
+export const calibrationSource = readFileSync(new URL("../src/calibration.js", import.meta.url), "utf8");
 export const plain = value => JSON.parse(JSON.stringify(value));
 export function harness(options = {}) {
   const files = new Map(Object.entries(options.files || {}));
   const nodes = [], dialogs = [], queue = [...(options.responses || [])];
   const requests = [], calendars = [], exported = [], webviews = [], drawings = [], previews = [];
-  let rendered, complete = false, calendarReads = 0, writes = 0;
+  let rendered, complete = false, calendarReads = 0, writes = 0, photoReads = 0;
   class Stack {
     constructor() { this.children = []; nodes.push(this); }
     addStack() { const node = new Stack(); this.children.push(node); return node; }
@@ -58,7 +59,7 @@ export function harness(options = {}) {
     constructor() { webviews.push(this); }
     async loadHTML(html) { this.html = html; }
     async present() { assert.equal(context.config.runsInApp, true, "组件不得打开裁剪界面"); }
-    async evaluateJavaScript() { return options.cropResult || null; }
+    async evaluateJavaScript(source) { this.evaluated = source; return options.calibrationResult || null; }
   }
   class DrawContext {
     constructor() { this.operations = []; drawings.push(this); }
@@ -79,10 +80,10 @@ export function harness(options = {}) {
     Rect: class { constructor(x, y, width, height) { Object.assign(this, { x, y, width, height }); } },
     DrawContext, WebView,
     Data: { fromPNG: () => ({ toBase64String: () => "aW1hZ2U=" }) },
-    Photos: { fromLibrary: async () => { assert.equal(context.config.runsInApp, true); if (options.cancelPhoto) throw Error("cancel"); return options.image || { size: { width: 1170, height: 2532 } }; } },
+    Photos: { fromLibrary: async () => { assert.equal(context.config.runsInApp, true); const index = photoReads++; if (options.cancelPhoto || options.cancelPhotoAt === index) throw Error("cancel"); return options.images?.[index] || options.image || { size: { width: 1170, height: 2532 } }; } },
     Font: { semiboldSystemFont: size => ({ size, weight: 600 }), systemFont: size => ({ size, weight: 400 }), boldRoundedSystemFont: size => ({ size, weight: 700, rounded: true }) },
     SFSymbol: { named: name => ({ image: { symbol: name } }) },
-    Device: { screenSize: () => ({ width: options.screenWidth || 375, height: 812 }) },
+    Device: { screenSize: () => ({ width: options.screenWidth || 375, height: 812 }), systemVersion: () => options.systemVersion || "18.0" },
     UUID: { string: () => `generated-${writes}-${nodes.length}-${Math.random().toString(36).slice(2)}` },
     Script: { name: () => options.scriptName || "RemoteLauncher", setWidget(value) { rendered = value; }, complete() { complete = true; } },
     CalendarEvent, Calendar: { forEvents: async () => [{ title: "个人日历", allowsContentModifications: true }] },
@@ -105,7 +106,7 @@ export function harness(options = {}) {
       }
     },
   });
-  const api = vm.runInContext(logicSource + "\n" + geometrySource + "\n" + backgroundSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,geometry:InfoWidgetGeometry})", context);
+  const api = vm.runInContext(logicSource + "\n" + geometrySource + "\n" + backgroundSource + "\n" + calibrationSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,geometry:InfoWidgetGeometry,detectCalibration:findInfoCalibrationRect})", context);
   return { ...api, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, previews, queue, context,
     evaluate: source => vm.runInContext(`(async()=>{${source}\n})()`, context),
     get rendered() { return rendered; }, get complete() { return complete; }, get calendarReads() { return calendarReads; },
