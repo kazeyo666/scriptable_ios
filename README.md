@@ -6,7 +6,6 @@
 
 - `scripts/`：远程脚本，每个脚本一个 `.js` 文件。
 - `RemoteLauncher.js`：复制到 Scriptable 的入口，每次运行同步全部远程脚本并安装到脚本列表，下载失败时使用缓存。
-- `scripts/hello.js`：用于检查远程加载的小组件示例。
 - `scripts/countdown.js`：通过菜单管理多个倒计时，事件保存在设备本地。
 
 ## 发布到 GitHub
@@ -31,14 +30,14 @@ git push -u origin main
 ## 在 Scriptable 中使用
 
 1. 在 Scriptable 中新建脚本，把 `RemoteLauncher.js` 的内容粘贴进去，命名为 `RemoteLauncher` 并保存。
-2. 运行入口脚本，会同步 `scripts/` 下全部 `.js` 并安装到 Scriptable 脚本列表。同步完成后选「返回列表」，即可看到 `countdown`、`hello`；也可以选「选择脚本运行」，选 `countdown` 打开倒计时管理菜单，选 `hello` 预览示例。
-3. 添加桌面 Scriptable 小组件，选择此入口脚本，在参数里填写脚本名，例如 `hello`，不需要 `.js` 后缀。
+2. 运行入口脚本，会同步 `scripts/` 下全部 `.js` 并安装到 Scriptable 脚本列表。同步完成后选「返回列表」，即可看到 `countdown`；也可以选「选择脚本运行」，选 `countdown` 打开倒计时管理菜单。
+3. 添加桌面 Scriptable 小组件，选择此入口脚本，在参数里填写脚本名，例如 `countdown`，不需要 `.js` 后缀。
 4. 把自己的脚本放入 `scripts/`，提交并推送到 GitHub 后，下次入口运行会下载新版本。桌面小组件的实际刷新时间由 iOS 调度。
 
 示例 Raw 地址（发布后才可用）：
 
 ```text
-https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/hello.js
+https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/countdown.js
 ```
 
 入口通过 GitHub 目录 API 发现 `scripts/` 下的脚本，使用 Scriptable 的 [Request](https://docs.scriptable.app/request/) 分批下载全部脚本，并通过 [FileManager](https://docs.scriptable.app/filemanager/) 保存本地缓存。App 和桌面组件每次运行都会同步全部脚本，再执行选中的脚本。只有首次下载成功后，才能离线使用缓存。目录读取失败时按已有缓存和默认/指定脚本尝试下载；个别脚本下载或语法检查失败时保留旧缓存，其他脚本仍可更新。
@@ -67,7 +66,7 @@ https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/hello.js
 2. 运行一次入口，在脚本选择菜单选 `countdown`，添加事件。点击桌面组件后同样可以选择 `countdown` 进入管理菜单。
 3. 桌面小组件选择「倒计时入口」，Parameter 填 `countdown|生日`、`countdown|纪念日` 等；填 `countdown` 或留空显示默认事件。
 
-远程入口参数格式为 `脚本名|脚本参数`，入口把竖线之后的完整内容传给远程脚本的 `args.widgetParameter`。原来的 `hello` 参数仍然可用。
+远程入口参数格式为 `脚本名|脚本参数`，入口把竖线之后的完整内容传给远程脚本的 `args.widgetParameter`。
 
 事件数据位于 Scriptable 本地 Documents 下的 `scriptable-countdown-events.json`，直接安装和远程加载共用这些事件。事件日期不写入代码，也不会上传到 GitHub；修改或更新脚本不会清除事件。数据不跨设备同步；删除 App 前请备份该文件。配置读取失败时保留原文件并提示错误。
 
