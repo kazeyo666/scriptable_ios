@@ -43,12 +43,12 @@ test("相册设置一次生成三个背景，Widget 离线直接读取且不覆�
   }
 });
 test("透明截图按尺寸保存，原像素裁剪不加遮罩且其他尺寸的背景保留", async () => {
-  let h = harness({ app: true, responses: [10, 0, 0, 0, 0, 0, -1, -1] }); await h.suite.run("dashboard");
+  let h = harness({ app: true, responses: [10, 0, 0, 0, 0, 0, 0, -1, -1] }); await h.suite.run("dashboard");
   const initial = h.suite.read("settings").data.background.transparent.large;
   assert.ok(initial); assert.equal(h.drawings.length, 1); assert.equal(h.drawings[0].respectScreenScale, false);
   assert.deepEqual(plain(h.drawings[0].operations[0].point), { x: -78, y: -231 });
   assert.equal(h.webviews.length, 0); assert.equal(h.previews[0].family, "large"); assert.ok(h.previews[0].widget.backgroundImage);
-  h = harness({ app: true, files: Object.fromEntries(h.files), responses: [10, 0, 0, 1, 1, 0, -1, -1] }); await h.suite.run("dashboard");
+  h = harness({ app: true, files: Object.fromEntries(h.files), responses: [10, 0, 0, 1, 1, 0, 0, -1, -1] }); await h.suite.run("dashboard");
   assert.equal(h.previews[0].family, "medium"); assert.ok(h.rendered.backgroundImage);
   assert.equal(h.suite.read("settings").data.background.transparent.large, initial);
   assert.ok(h.suite.read("settings").data.background.transparent.medium);
@@ -56,7 +56,7 @@ test("透明截图按尺寸保存，原像素裁剪不加遮罩且其他尺寸�
 });
 test("原生自动裁剪直接保存大号，两种图标布局立即预览，不依赖网页完成按钮", async () => {
   for (const choice of [0, 1]) {
-    const h = harness({ app: true, image: {size:{width:1290,height:2796}}, responses: [10,0,0,0,1,choice,0,-1,-1] });
+    const h = harness({ app: true, image: {size:{width:1290,height:2796}}, responses: [10,0,0,0,1,choice,0,0,-1,-1] });
     await h.suite.run("dashboard");
     const bg = h.suite.read("settings").data.background;
     assert.equal(bg.mode, "transparent"); assert.ok(bg.transparent.large);
@@ -67,7 +67,7 @@ test("原生自动裁剪直接保存大号，两种图标布局立即预览，�
   }
 });
 test("静默丢失图片写入时不会提示保存成功，也不修改原配置", async () => {
-  const h = harness({ app:true, dropImageWrite:true, responses:[10,0,0,0,0,0,-1] });
+  const h = harness({ app:true, dropImageWrite:true, responses:[10,0,0,0,0,0,0,-1] });
   await h.suite.run("dashboard");
   assert.equal(h.suite.read("settings").data.background.mode,"theme");
   assert.equal(h.dialogs.some(d=>d.title==="透明背景已保存并校验"),false);

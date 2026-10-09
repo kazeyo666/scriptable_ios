@@ -175,6 +175,8 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 
 若仍显示纯色，打开“检查背景并预览”，选择桌面对应尺寸，确认当前模式、图片可读取状态和预览结果。App 预览也纯色时应按提示修复配置或重选截图；App 预览正常而桌面旧样式时，再检查组件 Script 和参数、等待系统刷新。保存成功不等于 iOS 已刷新桌面。
 
+**停在带 Close 的页面？** 这是 Scriptable 的预览页，点左上角 **Close** 返回菜单。**文字重影？** 背景截图可能已包含普通组件文字，再叠加新内容就会重影。请从桌面编辑模式最右侧空白页重新截图，再制作背景；校准流程的第一张是紫色组件截图，第二张必须是无组件和 App 图标的空白壁纸截图。保存前新增明确确认，点返回会保留旧背景；确认依赖你核对选图，不是自动 OCR，也不会自动擦除文字。
+
 测量表改编自 [Widget-Blur](https://github.com/mzeryck/Widget-Blur)，遵循 MIT 许可，作者声明和许可同时保留在独立脚本与 [licenses/Widget-Blur-MIT.txt](licenses/Widget-Blur-MIT.txt)。上游明确区分 iOS 18 测量和旧版测量，实际桌面对齐仍需真机确认。
 
 ## 远程更新与离线

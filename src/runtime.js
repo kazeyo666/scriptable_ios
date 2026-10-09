@@ -367,6 +367,9 @@ function createInfoSuite() {
   }
   const backgroundPositions = family => family === "small" ? ["顶部左侧", "顶部右侧", "中间左侧", "中间右侧", "底部左侧", "底部右侧"]
     : family === "large" ? ["顶部", "底部"] : ["顶部", "中间", "底部"];
+  async function confirmEmptyWallpaper() {
+    return await choose("确认空白壁纸截图", ["确认：截图中没有组件和 App 图标"], "用于背景的图必须是桌面编辑模式最右侧空白页的完整截图。\n如果图里有日期、日程、倒计时、Scriptable 组件或 App 图标，这些内容会被画进背景，与新文字叠加产生重影。\n如果选错了，请点返回重新选图；程序不会自动擦除截图中的文字。") === 0;
+  }
   async function calibrationMenu() {
     const action = await choose("本机自动校准透明背景", ["查看校准步骤", "导入校准截图并自动裁剪"], "识别紫色组件的真实边界，适用于新机型、新 iOS 和显示缩放。全程本机处理，不需要手动裁剪。");
     if (action < 0) return;
@@ -383,11 +386,12 @@ function createInfoSuite() {
     await notify("再选择空白壁纸截图", "组件边界已自动识别。下一步选择同壁纸、同图标大小和缩放的空白桌面完整截图。将从这张图自动裁剪背景。");
     let image; try { image = await Photos.fromLibrary(); } catch (_) { return; }
     L.assert(image.size.width === reference.size.width && image.size.height === reference.size.height, "两张截图尺寸不同，请使用本机相同缩放的完整截图");
+    if (!await confirmEmptyWallpaper()) return;
     const settings = editable("settings"), bg = settings.background, name = `transparent-${uuid()}.png`;
     bg.mode = "transparent"; bg.transparent[family] = name;
     bg.calibration[family] = { width: image.size.width, height: image.size.height, position, rect };
     saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
-    await notify("本机校准背景已保存", `已按当前桌面实际尺寸裁剪并校验${["大号", "中号", "小号"][size]}背景。请把组件参数改回 default；RemoteLauncher 使用 dashboard|default。同尺寸同位置以后可直接复用校准。换图标大小、缩放或系统布局需重新校准。`);
+    await notify("本机校准背景已保存", `已按当前桌面实际尺寸裁剪并校验${["大号", "中号", "小号"][size]}背景。即将打开预览，看完点左上角 Close（关闭）返回，不是卡住。\n请把组件参数改回 default；RemoteLauncher 使用 dashboard|default。同尺寸同位置以后可直接复用校准。换图标大小、缩放或系统布局需重新校准。`);
     await presentPreview("dashboard", family);
   }
   async function backgroundMenu() {
@@ -423,12 +427,13 @@ function createInfoSuite() {
           variant = choices[choice].key;
         }
         const rect = useCalibration ? L.cropRect(calibrated.rect, image.size) : InfoWidgetGeometry.rect(image.size, family, position, variant);
+        if (!await confirmEmptyWallpaper()) continue;
         const name = `transparent-${uuid()}.png`;
         bg.mode = "transparent"; bg.transparent[family] = name;
         saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
         const check = backgroundFor(read("settings").data, family);
         L.assert(check.image && !check.warning, check.warning || "背景读回失败，请重试");
-        await notify("透明背景已保存并校验", `已自动裁剪${["大号", "中号", "小号"][size]}背景，即将预览。将组件放到所选位置；其他尺寸需分别设置。透明背景不叠加遮罩。`);
+        await notify("透明背景已保存并校验", `已自动裁剪${["大号", "中号", "小号"][size]}背景，即将打开预览。看完点左上角 Close（关闭）返回，不是卡住。将组件放到所选位置；其他尺寸需分别设置。透明背景不叠加遮罩。`);
         await presentPreview("dashboard", family);
       }
       if (action === 1) {
@@ -565,7 +570,7 @@ function createInfoSuite() {
     widget.addSpacer(); return widget;
   }
   async function preview(kind) {
-    const size = await choose("预览尺寸", ["大号", "中号", "小号"]); if (size < 0) return;
+    const size = await choose("预览尺寸", ["大号", "中号", "小号"], "预览打开后，点左上角 Close（关闭）返回菜单。"); if (size < 0) return;
     await presentPreview(kind, ["large", "medium", "small"][size]);
   }
   async function presentPreview(kind, family) {

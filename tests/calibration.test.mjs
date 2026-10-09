@@ -39,14 +39,14 @@ test("calibrate 参数在 Widget 中只呈现校准色，无菜单、网络或�
 });
 test("iOS 27 本机自动校准保存测量值，复用时不再走旧表", async () => {
   const rect={x:81,y:261,width:1044,height:1098};
-  const h=harness({app:true,systemVersion:"27.0",image:{size:{width:1206,height:2622}},calibrationResult:{rect},responses:[10,8,1,0,0,0,0,0,-1,-1]});
+  const h=harness({app:true,systemVersion:"27.0",image:{size:{width:1206,height:2622}},calibrationResult:{rect},responses:[10,8,1,0,0,0,0,0,0,-1,-1]});
   await h.suite.run("dashboard");
   const bg=h.suite.read("settings").data.background;
   assert.equal(bg.mode,"transparent");assert.deepEqual(plain(bg.calibration.large.rect),rect);
   assert.equal(h.webviews.length,1);assert.equal(h.previews[0].family,"large");assert.ok(h.rendered.backgroundImage);
   assert.equal(h.webviews[0].shouldAllowRequest({url:"https://example.com"}),false);
   const saved=plain(h.suite.backupObject());assert.deepEqual(saved.data.settings.background.calibration.large.rect,rect);
-  const next=harness({app:true,systemVersion:"27.0",files:Object.fromEntries(h.files),image:{size:{width:1206,height:2622}},responses:[10,0,0,0,0,0,-1,-1]});
+  const next=harness({app:true,systemVersion:"27.0",files:Object.fromEntries(h.files),image:{size:{width:1206,height:2622}},responses:[10,0,0,0,0,0,0,-1,-1]});
   await next.suite.run("dashboard");assert.equal(next.webviews.length,0);
   assert.equal(next.dialogs.some(a=>a.title==="桌面图标大小"),false);
   assert.deepEqual(plain(next.drawings[0].operations[0].point),{x:-81,y:-261});assert.equal(next.drawings[0].size.width,1044);
@@ -66,5 +66,15 @@ test("校准数据的越界和位置错误被拒绝，旧背景配置自动补�
   assert.deepEqual(plain(h.logic.validateBackground(bg).calibration),{small:null,medium:null,large:null});
   for(const entry of [{width:1206,height:2622,position:0,rect:{x:-1,y:261,width:1044,height:1098}}, {width:1206,height:2622,position:2,rect:{x:81,y:261,width:1044,height:1098}}]) {
     assert.throws(()=>h.logic.validateBackground({...bg,calibration:{large:entry}}));
+  }
+});
+test("拒绝含组件文字的背景截图时不写入图片或覆盖旧配置", async () => {
+  for (const options of [
+    { responses: [10,0,0,0,0,-1,-1,-1] },
+    { calibrationResult: {rect:{x:78,y:231,width:1014,height:1062}}, responses: [10,8,1,0,0,0,0,-1,-1,-1] }
+  ]) {
+    const h=harness({app:true,...options});await h.suite.run("dashboard");
+    assert.ok(h.dialogs.some(d=>d.title==="确认空白壁纸截图"));
+    assert.equal(h.files.size,0);assert.equal(h.previews.length,0);
   }
 });
