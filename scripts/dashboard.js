@@ -208,10 +208,159 @@ const InfoLogic = (() => {
     }
     return { plans, omittedModules: sections.length - plans.length, used: m.height - remaining, metrics: m };
   }
+  // Dashboard 用更清晰的字号层级和分区分隔线；独立列表保留原布局。
+  function planDashboard(sections, family, warning = false) {
+    const large = family === "large", medium = family === "medium";
+    const metrics = { budget: (large ? 211 : medium ? 66 : 60) - (warning ? 15 : 0),
+      header: large ? 16 : 14, gap: large ? 8 : 16, maxModules: large ? 4 : medium ? 2 : 1,
+      columns: medium ? 2 : 1 };
+    const cost = row => row.lines === 2 ? 32 : 21;
+    const chosen = sections.slice(0, metrics.maxModules);
+    const plans = chosen.map(section => ({ ...section, rows: [], hidden: section.rows.length }));
+    if (metrics.columns === 2) {
+      for (let i = 0; i < plans.length; i++) {
+        let remaining = metrics.budget - metrics.header;
+        for (const row of chosen[i].rows.slice(0, chosen[i].maxItems)) {
+          if (cost(row) > remaining) break;
+          plans[i].rows.push(row); plans[i].hidden--; remaining -= cost(row);
+        }
+      }
+    } else {
+      // 先确保每个分区至少有一条内容，再分配剩余空间。
+      const required = () => chosen.slice(0, plans.length).reduce((sum, section) => sum + metrics.header
+        + (section.rows.length ? cost(section.rows[0]) : 0), 0) + Math.max(0, plans.length - 1) * metrics.gap;
+      while (plans.length > 1 && required() > metrics.budget) plans.pop();
+      let remaining = metrics.budget - plans.length * metrics.header - Math.max(0, plans.length - 1) * metrics.gap;
+      for (let round = 0; round < 20; round++) {
+        for (let i = 0; i < plans.length; i++) {
+          const row = chosen[i].rows[round];
+          if (row && round < chosen[i].maxItems && cost(row) <= remaining) {
+            plans[i].rows.push(row); plans[i].hidden--; remaining -= cost(row);
+          }
+        }
+      }
+    }
+    const heights = plans.map(section => metrics.header + section.rows.reduce((sum, row) => sum + cost(row), 0));
+    const used = metrics.columns === 2 ? Math.max(0, ...heights)
+      : heights.reduce((a, b) => a + b, 0) + Math.max(0, plans.length - 1) * metrics.gap;
+    return { plans, metrics, used, omittedModules: sections.length - plans.length };
+  }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
     validate, empty, defaults, parcels, trains, countdowns, importItems, mergeItems, validateBackup,
-    truncate, metrics, planLayout, moduleIds };
+    truncate, metrics, planLayout, planDashboard, moduleIds };
 })();
+
+// Dashboard 专用呈现层：整张面板、留白和分隔线，保留原独立列表样式。
+function renderInfoDashboard({ sections, settings, family, urlFor, warning, now = new Date() }) {
+  const L = InfoLogic, large = family === "large", small = family === "small";
+  const mode = settings.theme.mode;
+  const adaptive = (light, dark) => mode === "system" ? Color.dynamic(new Color(light), new Color(dark)) : new Color(mode === "dark" ? dark : light);
+  const colors = { background: adaptive("#F7F6F2", "#15191D"), text: adaptive("#202A33", "#F1F3F5"),
+    muted: adaptive("#67727B", "#A1ABB4"), line: adaptive("#E0E2DF", "#30373D"),
+    accent: new Color(settings.theme.accent), tint: new Color(settings.theme.accent, 0.10) };
+  const widget = new ListWidget(); widget.backgroundColor = colors.background;
+  widget.setPadding(large ? 16 : 12, large ? 18 : 12, large ? 16 : 12, large ? 18 : 12);
+  widget.url = urlFor("dashboard"); widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
+  const text = (stack, value, size, color = colors.text, weight = "regular") => {
+    const label = stack.addText(String(value));
+    label.font = weight === "rounded" ? Font.boldRoundedSystemFont(size)
+      : weight === "medium" ? Font.semiboldSystemFont(size) : Font.systemFont(size);
+    label.textColor = color; label.lineLimit = 1; label.minimumScaleFactor = 0.75;
+    return label;
+  };
+  const horizontal = (parent, height) => {
+    const stack = parent.addStack(); stack.layoutHorizontally(); stack.centerAlignContent(); stack.size = new Size(0, height); return stack;
+  };
+  const dateLabel = `${now.getMonth() + 1}月${now.getDate()}日`, weekday = `星期${"日一二三四五六"[now.getDay()]}`;
+  const header = horizontal(widget, large ? 42 : 28);
+  if (large) {
+    const date = header.addStack(); date.layoutVertically();
+    text(date, dateLabel, 23, colors.text, "medium"); date.addSpacer(2);
+    text(date, `${weekday} · 今日概览`, 10, colors.muted);
+  } else {
+    text(header, dateLabel, small ? 17 : 19, colors.text, "medium");
+    header.addSpacer(7); text(header, weekday, 9, colors.muted);
+  }
+  header.addSpacer();
+  const parcelCount = sections.find(section => section.id === "parcels")?.count || 0;
+  if (!small && parcelCount) {
+    const badge = header.addStack(); badge.layoutHorizontally(); badge.centerAlignContent();
+    badge.setPadding(5, 8, 5, 8); badge.cornerRadius = 8; badge.backgroundColor = colors.tint;
+    text(badge, `${parcelCount} 件待取`, 10, colors.accent, "medium");
+  }
+  widget.addSpacer(large ? 10 : 8);
+  if (warning) { text(widget, "配置异常 · 使用有效快照", 9, colors.muted); widget.addSpacer(3); }
+  if (!sections.length) {
+    widget.addSpacer(); text(widget, "暂无信息", large ? 22 : 17, colors.text, "medium");
+    widget.addSpacer(5); text(widget, "点按添加快递、行程或重要日期", small ? 9 : 11, colors.muted);
+    widget.addSpacer(); return widget;
+  }
+  const layout = L.planDashboard(sections, family, Boolean(warning));
+  const columnMode = family === "medium" && layout.plans.length > 1;
+  let columns = widget;
+  if (columnMode) { columns = widget.addStack(); columns.layoutHorizontally(); }
+  const symbols = { parcels: "shippingbox", trains: "tram", calendar: "calendar", countdowns: "flag" };
+  function renderRow(parent, section, row) {
+    if (row.kind === "parcel") {
+      const line = horizontal(parent, 21);
+      const code = line.addStack(); code.size = new Size(small || columnMode ? 52 : 66, 0);
+      text(code, L.truncate(row.code, 12), large ? 17 : 14, colors.text, "rounded");
+      line.addSpacer(8);
+      text(line, L.truncate(row.company, small || columnMode ? 8 : 16), large ? 13 : 10, colors.muted);
+      if (large && row.station) { line.addSpacer(); text(line, L.truncate(row.station, 8), 10, colors.muted); }
+      return;
+    }
+    if (row.kind === "countdown") {
+      const line = horizontal(parent, 21);
+      text(line, L.truncate(row.name, small || columnMode ? 7 : 18), large ? 13 : 10);
+      line.addSpacer();
+      const pill = line.addStack(); pill.layoutHorizontally(); pill.centerAlignContent();
+      if (large) { pill.setPadding(2, 6, 2, 6); pill.cornerRadius = 5; pill.backgroundColor = row.days < 0 ? colors.line : colors.tint; }
+      const value = row.days === 0 ? "今天" : row.days < 0 ? `已过 ${-row.days} 天` : `${row.days} 天`;
+      text(pill, value, large ? 12 : 10, row.days < 0 ? colors.muted : colors.accent, "medium");
+      return;
+    }
+    if (row.lines === 2) {
+      const item = parent.addStack(); item.layoutVertically(); item.size = new Size(0, 32);
+      const route = horizontal(item, 17);
+      text(route, L.truncate(row.main, small || columnMode ? 18 : 36), large ? 13 : 10, colors.text, "medium");
+      const details = horizontal(item, 15);
+      text(details, L.truncate(row.detail, small || columnMode ? 24 : 45), large ? 10 : 9, colors.muted);
+      return;
+    }
+    const line = horizontal(parent, 21);
+    text(line, L.truncate(row.main, small || columnMode ? 18 : 36), large ? 13 : 10, row.status ? colors.muted : colors.text);
+    if (large && row.detail) { line.addSpacer(); text(line, L.truncate(row.detail, 12), 10, colors.muted); }
+  }
+  for (let i = 0; i < layout.plans.length; i++) {
+    const section = layout.plans[i];
+    if (i) {
+      if (columnMode) columns.addSpacer(16);
+      else {
+        widget.addSpacer(3.5);
+        const divider = widget.addStack(); divider.size = new Size(0, 1); divider.backgroundColor = colors.line;
+        widget.addSpacer(3.5);
+      }
+    }
+    const group = columns.addStack(); group.layoutVertically();
+    if (columnMode) {
+      const width = Math.max(108, Math.min(155, (Device.screenSize().width - 96) / 2));
+      group.size = new Size(width, 0);
+    }
+    if (!small) group.url = urlFor(section.id);
+    const heading = horizontal(group, layout.metrics.header);
+    try { const icon = heading.addImage(SFSymbol.named(symbols[section.id]).image); icon.imageSize = new Size(11, 11); icon.tintColor = colors.muted; heading.addSpacer(5); } catch (_) { /* 无此 SF Symbol 时保留标题 */ }
+    text(heading, section.title, large ? 10 : 9, colors.muted, "medium");
+    heading.addSpacer();
+    if (section.hidden) text(heading, `另 ${section.hidden} 条`, 8, colors.muted);
+    else if (section.count) text(heading, section.count, 9, colors.muted);
+    for (const row of section.rows) renderRow(group, section, row);
+  }
+  widget.addSpacer();
+  const footer = horizontal(widget, 12);
+  text(footer, layout.omittedModules ? `还有 ${layout.omittedModules} 个分组 · 点按查看` : small ? "点按管理" : "点按分区管理", 8, colors.muted);
+  return widget;
+}
 
 // Scriptable 运行层。公共逻辑打包到每个独立脚本，不需要手机安装依赖。
 function createInfoSuite() {
@@ -559,9 +708,9 @@ function createInfoSuite() {
   function section(key, settings, now = new Date()) {
     const state = read(key), data = state.data; let rows = [], hint = state.warning;
     const providers = {
-      parcels: value => L.parcels(value).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · ") })),
+      parcels: value => L.parcels(value).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · "), kind: "parcel", code: p.code, company: p.company, station: p.station })),
       trains: value => L.trains(value, now.getTime()).map(t => ({ main: `${t.date.slice(5).replace("-", "/")} ${t.from}→${t.to}`, detail: `${t.number} · ${t.time} · ${t.seat || "座位未填"}`, lines: 2 })),
-      countdowns: value => L.countdowns(value, now).map(e => ({ main: `${e.name}：${L.dayText(e.days)}`, detail: e.date })),
+      countdowns: value => L.countdowns(value, now).map(e => ({ main: `${e.name}：${L.dayText(e.days)}`, detail: e.date, kind: "countdown", name: e.name, days: e.days })),
     };
     if (providers[key]) rows = providers[key](data);
     if (key === "calendar") {
@@ -577,7 +726,7 @@ function createInfoSuite() {
         else if (now.getTime() - Date.parse(data.updatedAt) > 24 * 3600000) hint = "日历缓存超过一天，请刷新";
       }
     }
-    if (hint) rows = [{ main: hint, detail: "" }, ...rows];
+    if (hint) rows = [{ main: hint, detail: "", status: true }, ...rows];
     return { id: key, title: labels[key], count: key === "parcels" ? L.parcels(data).length : rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: 20 };
   }
   function addText(stack, value, font, color) {
@@ -608,6 +757,15 @@ function createInfoSuite() {
   function render(kind, family = config.widgetFamily || "large") {
     const supported = ["small", "medium", "large"].includes(family);
     const settingsState = read("settings"), settings = settingsState.data, colors = palette(settings.theme);
+    if (kind === "dashboard" && supported) {
+      const profile = settings.profiles[activeProfile];
+      const sections = profile.modules.filter(m => m.enabled).map(module => {
+        try { return { ...section(module.id, settings), maxItems: module.maxItems }; }
+        catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "", status: true }], maxItems: 1, warning: true }; }
+      }).filter(s => !profile.hideEmpty || s.rows.length || s.warning)
+        .map(s => s.rows.length ? s : { ...s, rows: [{ main: "暂无记录", detail: "", status: true }] });
+      return renderInfoDashboard({ sections, settings, family, urlFor: link, warning: settingsState.warning });
+    }
     const widget = new ListWidget(); widget.setPadding(10, 12, 10, 12); widget.backgroundColor = colors.background;
     widget.url = link(kind === "dashboard" ? "dashboard" : kind);
     widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
@@ -616,14 +774,7 @@ function createInfoSuite() {
     widget.addSpacer(6);
     if (!supported) { addText(widget, "请选择桌面小号、中号或大号组件", Font.systemFont(12), colors.secondary); return widget; }
     if (settingsState.warning) { addText(widget, "配置损坏，使用默认或有效快照", Font.systemFont(10), colors.secondary); widget.addSpacer(3); }
-    let sections;
-    if (kind === "dashboard") {
-      const profile = settings.profiles[activeProfile];
-      sections = profile.modules.filter(m => m.enabled).map(module => {
-        try { return { ...section(module.id, settings, now), maxItems: module.maxItems }; }
-        catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "" }], maxItems: 1, warning: true }; }
-      }).filter(s => !profile.hideEmpty || s.rows.length || s.warning);
-    } else sections = [section(kind, settings, now)];
+    const sections = [section(kind, settings, now)];
     if (!sections.length || (sections.length === 1 && !sections[0].rows.length)) {
       addText(widget, "暂无信息，点击组件管理数据", Font.systemFont(12), colors.secondary); widget.addSpacer(); return widget;
     }

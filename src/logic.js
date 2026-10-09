@@ -204,7 +204,44 @@ const InfoLogic = (() => {
     }
     return { plans, omittedModules: sections.length - plans.length, used: m.height - remaining, metrics: m };
   }
+  // Dashboard 用更清晰的字号层级和分区分隔线；独立列表保留原布局。
+  function planDashboard(sections, family, warning = false) {
+    const large = family === "large", medium = family === "medium";
+    const metrics = { budget: (large ? 211 : medium ? 66 : 60) - (warning ? 15 : 0),
+      header: large ? 16 : 14, gap: large ? 8 : 16, maxModules: large ? 4 : medium ? 2 : 1,
+      columns: medium ? 2 : 1 };
+    const cost = row => row.lines === 2 ? 32 : 21;
+    const chosen = sections.slice(0, metrics.maxModules);
+    const plans = chosen.map(section => ({ ...section, rows: [], hidden: section.rows.length }));
+    if (metrics.columns === 2) {
+      for (let i = 0; i < plans.length; i++) {
+        let remaining = metrics.budget - metrics.header;
+        for (const row of chosen[i].rows.slice(0, chosen[i].maxItems)) {
+          if (cost(row) > remaining) break;
+          plans[i].rows.push(row); plans[i].hidden--; remaining -= cost(row);
+        }
+      }
+    } else {
+      // 先确保每个分区至少有一条内容，再分配剩余空间。
+      const required = () => chosen.slice(0, plans.length).reduce((sum, section) => sum + metrics.header
+        + (section.rows.length ? cost(section.rows[0]) : 0), 0) + Math.max(0, plans.length - 1) * metrics.gap;
+      while (plans.length > 1 && required() > metrics.budget) plans.pop();
+      let remaining = metrics.budget - plans.length * metrics.header - Math.max(0, plans.length - 1) * metrics.gap;
+      for (let round = 0; round < 20; round++) {
+        for (let i = 0; i < plans.length; i++) {
+          const row = chosen[i].rows[round];
+          if (row && round < chosen[i].maxItems && cost(row) <= remaining) {
+            plans[i].rows.push(row); plans[i].hidden--; remaining -= cost(row);
+          }
+        }
+      }
+    }
+    const heights = plans.map(section => metrics.header + section.rows.reduce((sum, row) => sum + cost(row), 0));
+    const used = metrics.columns === 2 ? Math.max(0, ...heights)
+      : heights.reduce((a, b) => a + b, 0) + Math.max(0, plans.length - 1) * metrics.gap;
+    return { plans, metrics, used, omittedModules: sections.length - plans.length };
+  }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
     validate, empty, defaults, parcels, trains, countdowns, importItems, mergeItems, validateBackup,
-    truncate, metrics, planLayout, moduleIds };
+    truncate, metrics, planLayout, planDashboard, moduleIds };
 })();

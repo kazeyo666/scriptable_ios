@@ -8,6 +8,8 @@ const OWNER = "kazeyo666";
 const REPO = "scriptable_ios";
 const BRANCH = "main";
 const DEFAULT_SCRIPT = "countdown";
+// 即使目录 API 和远程清单都失败，也能尝试安装当前版本的核心组件。
+const BUNDLED_SCRIPTS = ["countdown", "countdown-list", "dashboard", "parcel-list", "train-tickets"];
 const parameter = String(args.widgetParameter || args.queryParameters?.remoteScript || "").trim();
 const separator = parameter.indexOf("|");
 let name = (separator < 0 ? parameter : parameter.slice(0, separator)).trim()
@@ -19,7 +21,8 @@ if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
 
 const fm = FileManager.local();
 // 跟随入口的存储位置：启用 iCloud 时写入 iCloud，否则写入本地脚本目录。
-const scriptFiles = fm.isFileStoredIniCloud(module.filename) ? FileManager.iCloud() : fm;
+const usesICloud = fm.isFileStoredIniCloud(module.filename);
+const scriptFiles = usesICloud ? FileManager.iCloud() : fm;
 const scriptsDir = scriptFiles.documentsDirectory();
 const cacheDir = fm.joinPath(fm.documentsDirectory(), "scriptable-remote-cache");
 fm.createDirectory(cacheDir, true);
@@ -38,9 +41,10 @@ function validateSource(source) {
 }
 const cachePathFor = script => fm.joinPath(cacheDir, `${cachePrefix}${script}.js`);
 let names;
+let discoveryNote = "";
 
 try {
-  const request = new Request(`https://api.github.com/repos/${OWNER}/${REPO}/contents/scripts?ref=${encodeURIComponent(BRANCH)}`);
+  const request = new Request(`https://api.github.com/repos/${OWNER}/${REPO}/contents/scripts?ref=${encodeURIComponent(BRANCH)}&t=${Date.now()}`);
   request.timeoutInterval = 15;
   request.headers = { Accept: "application/vnd.github+json" };
   const entries = await request.loadJSON();
@@ -50,11 +54,26 @@ try {
   names = entries.filter(entry => entry.type === "file" && /^[a-zA-Z0-9_-]+\.js$/.test(entry.name))
     .map(entry => entry.name.slice(0, -3)).sort();
 } catch (error) {
-  console.warn(`无法读取远程目录：${error.message}；按本地缓存尝试更新。`);
-  names = fm.listContents(cacheDir)
-    .filter(file => file.startsWith(cachePrefix) && file.endsWith(".js"))
-    .map(file => file.slice(cachePrefix.length, -3))
-    .filter(script => /^[a-zA-Z0-9_-]+$/.test(script)).sort();
+  console.warn(`无法读取远程目录：${error.message}；尝试备用脚本清单。`);
+  try {
+    const request = new Request(`${rawBase}manifest.json?t=${Date.now()}`);
+    request.timeoutInterval = 15;
+    const manifest = await request.loadJSON();
+    if (request.response.statusCode !== 200 || manifest?.version !== 1 || !Array.isArray(manifest.scripts)
+      || !manifest.scripts.length || !manifest.scripts.every(script => typeof script === "string" && /^[a-zA-Z0-9_-]+$/.test(script))) {
+      throw new Error("备用脚本清单格式无效");
+    }
+    names = [...new Set(manifest.scripts)].sort();
+    discoveryNote = "目录接口不可用，已通过备用清单发现脚本。";
+  } catch (manifestError) {
+    console.warn(`备用清单不可用：${manifestError.message}；尝试当前版本核心脚本和已有缓存。`);
+    const cached = fm.listContents(cacheDir)
+      .filter(file => file.startsWith(cachePrefix) && file.endsWith(".js"))
+      .map(file => file.slice(cachePrefix.length, -3))
+      .filter(script => /^[a-zA-Z0-9_-]+$/.test(script));
+    names = [...new Set([...BUNDLED_SCRIPTS, ...cached])].sort();
+    discoveryNote = "目录与备用清单不可用，已尝试安装当前版本的核心脚本。";
+  }
 }
 
 // 目录 API 不可用时，首次安装仍可尝试直接下载默认/指定脚本。
@@ -85,7 +104,7 @@ for (let offset = 0; offset < syncNames.length; offset += 3) {
 // 将缓存中的完整脚本安装到文档目录，作为可以单独运行的 .js 文件。
 // 离线或个别下载失败时，仍能安装已存在的缓存。
 const installFailures = new Map();
-let installed = 0;
+const installedNames = [];
 for (const script of syncNames) {
   const cachePath = cachePathFor(script);
   if (!fm.fileExists(cachePath)) continue;
@@ -97,7 +116,8 @@ for (const script of syncNames) {
     const source = fm.readString(cachePath);
     validateSource(source);
     scriptFiles.writeString(scriptPath, source);
-    installed++;
+    if (!scriptFiles.fileExists(scriptPath)) throw new Error("写入后未找到脚本文件，请检查存储权限。");
+    installedNames.push(script);
   } catch (error) {
     installFailures.set(script, String(error.message || error));
     console.warn(`${script} 安装失败：${installFailures.get(script)}`);
@@ -106,9 +126,11 @@ for (const script of syncNames) {
 
 if (config.runsInApp) {
   const report = new Alert();
-  report.title = "脚本同步完成";
-  report.message = `已将 ${installed} 个脚本保存到 Scriptable 脚本目录。返回脚本列表可直接打开。`
-    + (failures.size ? `\n${failures.size} 个下载失败，有缓存的使用旧版本。` : "")
+  report.title = "脚本同步结果";
+  report.message = `已安装 ${installedNames.length} 个脚本：${installedNames.length ? "\n" + installedNames.join("\n") : "无"}`
+    + `\n保存位置：${usesICloud ? "iCloud" : "本机"} Scriptable 脚本目录。返回列表后打开。`
+    + (discoveryNote ? `\n${discoveryNote}` : "")
+    + (failures.size ? "\n下载失败（有缓存则使用旧版）：\n" + [...failures].map(([script, reason]) => `${script}：${reason}`).join("\n") : "")
     + (installFailures.size ? "\n安装失败：\n" + [...installFailures].map(([script, reason]) => `${script}：${reason}`).join("\n") : "");
   report.addAction("选择脚本运行");
   report.addCancelAction("返回列表");

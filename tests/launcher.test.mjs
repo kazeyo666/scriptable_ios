@@ -45,3 +45,27 @@ test("入口不会覆盖自身同名脚本", async () => {
   const h = harness({ launcherPath: "/docs/dashboard.js", parameter: "dashboard", files: { "/docs/dashboard.js": "local launcher" } });
   await h.evaluate(launcher); assert.equal(h.files.get("/docs/dashboard.js"), "local launcher"); assert.ok(h.rendered);
 });
+test("目录 API 不通时从 Raw 清单发现新增 dashboard", async () => {
+  const h = harness({ app: true, apiError: true, responses: [-1], files: {
+    [cachePath("countdown")]: readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"),
+  } });
+  await h.evaluate(launcher);
+  assert.ok(h.files.has("/docs/dashboard.js"));
+  assert.match(h.dialogs[0].message, /已安装 5 个脚本/);
+  assert.match(h.dialogs[0].message, /dashboard/);
+  assert.match(h.dialogs[0].message, /备用清单/);
+});
+test("目录和清单均不可用时仍尝试安装当前版本的五个组件", async () => {
+  const h = harness({ app: true, apiError: true, manifestError: true, responses: [-1] });
+  await h.evaluate(launcher); assert.ok(h.files.has("/docs/dashboard.js"));
+  assert.match(h.dialogs[0].message, /已安装 5 个脚本/);
+});
+test("无效清单不允许路径穿越，写入失败明确列出脚本", async () => {
+  const h = harness({ app: true, apiError: true, manifest: { version: 1, scripts: ["../secret"] }, responses: [-1],
+    failWrite: path => path === "/docs/dashboard.js" });
+  await h.evaluate(launcher);
+  assert.equal(h.files.has("/docs/dashboard.js"), false);
+  assert.match(h.dialogs[0].message, /已安装 4 个脚本/);
+  assert.match(h.dialogs[0].message, /安装失败：\ndashboard/);
+  assert.equal(h.requests.some(url => url.includes("../secret")), false);
+});

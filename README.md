@@ -4,6 +4,8 @@
 
 原 `countdown.js` 保留原功能和数据格式。GitHub 只保存代码，私人记录使用 Scriptable 本地文件，不因更新脚本丢失。
 
+新版 Dashboard 采用暖白/炭灰整张面板、日期标题、细分隔线和醒目的取件码、天数标签。可查看[浅色与深色预览](docs/dashboard-preview.png)；预览来自实际渲染树，字体与图标为浏览器近似效果，不是 iPhone 真机截图。
+
 ## 安装与首次使用
 
 1. 安装 iOS [Scriptable](https://scriptable.app/)。
@@ -132,7 +134,7 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 9. 日历授权与缓存。
 10. 切换预览配置（默认/紧凑）。
 
-大号最多四个纵向圆角卡片，中号两个并列卡片，小号第一个有内容的启用模块。设置条数是上限，实际还要满足高度预算；超长文字单行缩放/截断。后续模块被省略时显示提示，数据全部保留在管理菜单。
+大号最多四个纵向分区，用细线分隔；中号两个并列分区，小号聚焦第一个有内容的启用模块。日期作为主标题，取件码使用醒目的数字字体，倒计时右侧显示剩余天数标签；今天和过期事件有明确文字。设置条数是上限，实际还要满足高度预算；超长文字单行缩放/截断。后续模块被省略时显示提示，数据全部保留在管理菜单。
 
 日历默认关闭。启用后通过 [CalendarEvent.between](https://docs.scriptable.app/calendarevent/#-between) 读取指定天数的日程，存本地缓存。App 内打开面板时，缓存超过 15 分钟会尝试更新，也可手动刷新。Widget 仅读缓存，不弹权限；缓存超过一天提示刷新。
 
@@ -140,7 +142,7 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 
 ## 远程更新与离线
 
-- 入口发现 `scripts/` 直接包含的 `.js`，分批下载全部脚本。文件名支持字母、数字、下划线和连字符。
+- 入口发现 `scripts/` 直接包含的 `.js`，分批下载全部脚本。目录接口失败时读取 GitHub Raw 的 `scripts/manifest.json`；清单也失败时尝试内置的五个核心脚本及已有缓存，不再只更新旧缓存而漏掉 Dashboard。文件名支持字母、数字、下划线和连字符。
 - 成功 HTTP 响应还需排除 HTML、JSON 和语法错误，才覆盖缓存；安装和执行缓存时再次检查。
 - 这是格式/语法检查，不是代码签名或沙箱。只从可信仓库更新。
 - 个别失败保留有效缓存，不影响其他脚本更新；首次无缓存且离线不能完成下载。
@@ -177,7 +179,7 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 
 ## 常见问题与限制
 
-- **新增脚本没出现？** 替换最新入口，运行并检查结果，返回列表；确认本地/iCloud 目录可写。
+- **新增脚本没出现？** 替换最新入口并运行；同步结果会逐个列出已安装脚本、保存位置及下载/安装错误。确认列表包含 `dashboard`，再返回 Scriptable 列表；若文件已安装但列表未刷新，重新打开 App。
 - **组件没有最新记录？** 先 App 预览确认，再等待系统刷新。检查 Script 和参数，直接 `dashboard` 不填 `dashboard|default`。
 - **显示不全？** 选择大号、调整顺序和条数；组件尺寸限制不影响保存数量。
 - **日历空白？** 启用、允许权限、刷新缓存。关闭日历会清除当前缓存。
@@ -197,12 +199,15 @@ scripts/
   train-tickets.js        火车票
   countdown-list.js       多事件倒计时
   dashboard.js            聚合面板
+  manifest.json           自动生成的备用发现清单
 src/
   logic.js                校验、排序、日期与布局预算
+  dashboard.js            聚合面板专用呈现层
   runtime.js              本地存储、提供器、渲染、中文交互
 tools/
   build.mjs               生成四个完整独立脚本
   check.mjs               语法、一致性、自动化检查
+  preview.mjs             从实际渲染树生成浏览器预览
 tests/                    纯逻辑和 Scriptable Mock
 docs/                     研究记录及真机验收步骤
 ```

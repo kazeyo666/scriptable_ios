@@ -67,3 +67,14 @@ for (const family of ["small", "medium", "large"]) {
     assert.equal(cost, plan.used);
   });
 }
+for (const family of ["small", "medium", "large"]) {
+  test(`${family} 新面板完整四模块、警告和长列表满足高度预算`, () => {
+    const sections = L.moduleIds.map(id => ({ id, maxItems: 20, rows: Array.from({ length: 30 }, () => ({ main: "内容", lines: id === "trains" ? 2 : 1 })) }));
+    for (const warning of [false, true]) {
+      const plan = L.planDashboard(sections, family, warning);
+      assert.ok(plan.used <= plan.metrics.budget);
+      assert.ok(plan.plans.every(p => p.rows.length >= 1));
+      assert.equal(plan.plans.length, family === "large" ? 4 : family === "medium" ? 2 : 1);
+    }
+  });
+}

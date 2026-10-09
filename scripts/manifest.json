@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "scripts": [
+    "countdown",
+    "countdown-list",
+    "dashboard",
+    "parcel-list",
+    "train-tickets"
+  ]
+}

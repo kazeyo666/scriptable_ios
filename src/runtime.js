@@ -344,9 +344,9 @@ function createInfoSuite() {
   function section(key, settings, now = new Date()) {
     const state = read(key), data = state.data; let rows = [], hint = state.warning;
     const providers = {
-      parcels: value => L.parcels(value).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · ") })),
+      parcels: value => L.parcels(value).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · "), kind: "parcel", code: p.code, company: p.company, station: p.station })),
       trains: value => L.trains(value, now.getTime()).map(t => ({ main: `${t.date.slice(5).replace("-", "/")} ${t.from}→${t.to}`, detail: `${t.number} · ${t.time} · ${t.seat || "座位未填"}`, lines: 2 })),
-      countdowns: value => L.countdowns(value, now).map(e => ({ main: `${e.name}：${L.dayText(e.days)}`, detail: e.date })),
+      countdowns: value => L.countdowns(value, now).map(e => ({ main: `${e.name}：${L.dayText(e.days)}`, detail: e.date, kind: "countdown", name: e.name, days: e.days })),
     };
     if (providers[key]) rows = providers[key](data);
     if (key === "calendar") {
@@ -362,7 +362,7 @@ function createInfoSuite() {
         else if (now.getTime() - Date.parse(data.updatedAt) > 24 * 3600000) hint = "日历缓存超过一天，请刷新";
       }
     }
-    if (hint) rows = [{ main: hint, detail: "" }, ...rows];
+    if (hint) rows = [{ main: hint, detail: "", status: true }, ...rows];
     return { id: key, title: labels[key], count: key === "parcels" ? L.parcels(data).length : rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: 20 };
   }
   function addText(stack, value, font, color) {
@@ -393,6 +393,15 @@ function createInfoSuite() {
   function render(kind, family = config.widgetFamily || "large") {
     const supported = ["small", "medium", "large"].includes(family);
     const settingsState = read("settings"), settings = settingsState.data, colors = palette(settings.theme);
+    if (kind === "dashboard" && supported) {
+      const profile = settings.profiles[activeProfile];
+      const sections = profile.modules.filter(m => m.enabled).map(module => {
+        try { return { ...section(module.id, settings), maxItems: module.maxItems }; }
+        catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "", status: true }], maxItems: 1, warning: true }; }
+      }).filter(s => !profile.hideEmpty || s.rows.length || s.warning)
+        .map(s => s.rows.length ? s : { ...s, rows: [{ main: "暂无记录", detail: "", status: true }] });
+      return renderInfoDashboard({ sections, settings, family, urlFor: link, warning: settingsState.warning });
+    }
     const widget = new ListWidget(); widget.setPadding(10, 12, 10, 12); widget.backgroundColor = colors.background;
     widget.url = link(kind === "dashboard" ? "dashboard" : kind);
     widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
@@ -401,14 +410,7 @@ function createInfoSuite() {
     widget.addSpacer(6);
     if (!supported) { addText(widget, "请选择桌面小号、中号或大号组件", Font.systemFont(12), colors.secondary); return widget; }
     if (settingsState.warning) { addText(widget, "配置损坏，使用默认或有效快照", Font.systemFont(10), colors.secondary); widget.addSpacer(3); }
-    let sections;
-    if (kind === "dashboard") {
-      const profile = settings.profiles[activeProfile];
-      sections = profile.modules.filter(m => m.enabled).map(module => {
-        try { return { ...section(module.id, settings, now), maxItems: module.maxItems }; }
-        catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "" }], maxItems: 1, warning: true }; }
-      }).filter(s => !profile.hideEmpty || s.rows.length || s.warning);
-    } else sections = [section(kind, settings, now)];
+    const sections = [section(kind, settings, now)];
     if (!sections.length || (sections.length === 1 && !sections[0].rows.length)) {
       addText(widget, "暂无信息，点击组件管理数据", Font.systemFont(12), colors.secondary); widget.addSpacer(); return widget;
     }

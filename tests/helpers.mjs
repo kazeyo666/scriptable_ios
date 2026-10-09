@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 export const logicSource = readFileSync(new URL("../src/logic.js", import.meta.url), "utf8");
 export const runtimeSource = readFileSync(new URL("../src/runtime.js", import.meta.url), "utf8");
+export const dashboardSource = readFileSync(new URL("../src/dashboard.js", import.meta.url), "utf8");
 export const plain = value => JSON.parse(JSON.stringify(value));
 export function harness(options = {}) {
   const files = new Map(Object.entries(options.files || {}));
@@ -14,7 +15,7 @@ export function harness(options = {}) {
     constructor() { this.children = []; nodes.push(this); }
     addStack() { const node = new Stack(); this.children.push(node); return node; }
     addText(value) { const node = { value, kind: "text", centerAlignText() {} }; this.children.push(node); return node; }
-    addImage() { const node = {}; this.children.push(node); return node; }
+    addImage(image) { const node = { kind: "image", image }; this.children.push(node); return node; }
     addSpacer(value) { this.children.push({ kind: "spacer", value }); }
     setPadding(...padding) { this.padding = padding; }
     layoutHorizontally() { this.horizontal = true; }
@@ -44,7 +45,7 @@ export function harness(options = {}) {
     }
     async presentSheet() { return this.next(); } async presentAlert() { return this.next(); }
   }
-  class Color { constructor(value) { this.value = value; } static dynamic(light, dark) { return { light, dark }; } static white() { return new Color("white"); } }
+  class Color { constructor(value, alpha = 1) { this.value = value; this.alpha = alpha; } static dynamic(light, dark) { return { light, dark }; } static white() { return new Color("white"); } }
   class CalendarEvent {
     async save() { calendars.push(this); }
     static async between() { calendarReads++; if (options.calendarError) throw Error("permission denied"); return options.calendarEvents || []; }
@@ -56,15 +57,24 @@ export function harness(options = {}) {
     module: { filename: options.launcherPath || "/docs/RemoteLauncher.js" },
     FileManager: { local: () => manager(false), iCloud: () => manager(true) },
     Alert, Color, ListWidget: Stack, Size: class { constructor(width, height) { this.width = width; this.height = height; } },
-    Font: { semiboldSystemFont: size => ({ size }), systemFont: size => ({ size }), boldRoundedSystemFont: size => ({ size }) },
-    SFSymbol: { named: () => ({ image: {} }) },
+    Font: { semiboldSystemFont: size => ({ size, weight: 600 }), systemFont: size => ({ size, weight: 400 }), boldRoundedSystemFont: size => ({ size, weight: 700, rounded: true }) },
+    SFSymbol: { named: name => ({ image: { symbol: name } }) },
+    Device: { screenSize: () => ({ width: options.screenWidth || 375, height: 812 }) },
     UUID: { string: () => `generated-${writes}-${nodes.length}-${Math.random()}` },
     Script: { name: () => options.scriptName || "RemoteLauncher", setWidget(value) { rendered = value; }, complete() { complete = true; } },
     CalendarEvent, Calendar: { forEvents: async () => [{ title: "个人日历", allowsContentModifications: true }] },
     DocumentPicker: { open: async () => [options.importPath || "/docs/import.json"], exportString: async (...value) => { exported.push(value); } },
     Request: class {
       constructor(url) { this.url = url; requests.push(url); this.response = { statusCode: options.status || 200 }; }
-      async loadJSON() { if (options.offline || options.apiError) throw Error("offline"); return options.entries || ["countdown", "parcel-list", "train-tickets", "countdown-list", "dashboard"].map(name => ({ type: "file", name: name + ".js" })); }
+      async loadJSON() {
+        if (options.offline) throw Error("offline");
+        if (this.url.includes("/manifest.json")) {
+          if (options.manifestError) throw Error("manifest unavailable");
+          return options.manifest ?? JSON.parse(readFileSync(new URL("../scripts/manifest.json", import.meta.url), "utf8"));
+        }
+        if (options.apiError) throw Error("directory unavailable");
+        return options.entries || ["countdown", "parcel-list", "train-tickets", "countdown-list", "dashboard"].map(name => ({ type: "file", name: name + ".js" }));
+      }
       async loadString() {
         if (options.offline) throw Error("offline");
         const name = this.url.split("/").at(-1).split(".js")[0];
@@ -72,7 +82,7 @@ export function harness(options = {}) {
       }
     },
   });
-  const api = vm.runInContext(logicSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite()})", context);
+  const api = vm.runInContext(logicSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard})", context);
   return { ...api, files, nodes, dialogs, requests, exported, calendars, queue, context,
     evaluate: source => vm.runInContext(`(async()=>{${source}\n})()`, context),
     get rendered() { return rendered; }, get complete() { return complete; }, get calendarReads() { return calendarReads; },
