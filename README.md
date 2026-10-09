@@ -1,81 +1,220 @@
-# scriptable_ios
+# Scriptable 中文信息小组件
 
-存放 iOS [Scriptable](https://scriptable.app/) 脚本，通过 GitHub Raw 远程加载。
+在 iPhone 桌面或负一屏（今天视图）集中查看待取快递、火车票、倒计时和日历日程。支持小号、中号、大号，优先设计大号聚合面板。每个脚本可单独运行，手机不需要 npm、公共模块或浏览器 DOM。
 
-## 目录
+原 `countdown.js` 保留原功能和数据格式。GitHub 只保存代码，私人记录使用 Scriptable 本地文件，不因更新脚本丢失。
 
-- `scripts/`：远程脚本，每个脚本一个 `.js` 文件。
-- `RemoteLauncher.js`：复制到 Scriptable 的入口，每次运行同步全部远程脚本并安装到脚本列表，下载失败时使用缓存。
-- `scripts/countdown.js`：通过菜单管理多个倒计时，事件保存在设备本地。
+## 安装与首次使用
 
-## 发布到 GitHub
+1. 安装 iOS [Scriptable](https://scriptable.app/)。
+2. 复制 [RemoteLauncher.js](RemoteLauncher.js) 完整代码到 Scriptable 新脚本，命名为 `RemoteLauncher`。
+3. 运行入口，它会发现 `scripts/` 下全部 `.js`，下载、校验并安装到脚本列表。
+4. 同步完成选「返回列表」，点击 `dashboard` 打开管理菜单；也可在入口选择脚本运行。
+5. 在「管理快递」「管理火车票」「管理倒计时」中添加记录，再选择「预览聚合组件 → 大号」。
 
-本地仓库已初始化，默认分支为 `main`，预设远程地址为 `git@github.com:kazeyo666/scriptable_ios.git`。GitHub 上的仓库需要另行创建；为方便无登录远程加载，建议设为公开。
+已安装旧版入口的用户，这次请替换入口代码，以支持卡片点击后的管理跳转。原记录无需迁移。也可直接复制 `scripts/` 中任意完整脚本到 Scriptable；`dashboard.js` 可独立管理全部数据，不要求其他脚本已安装。
 
-如果 GitHub 上尚未创建仓库，登录 GitHub CLI 后，在本目录执行：
+## 添加桌面与负一屏组件
 
-```bash
-gh auth login
-gh repo create kazeyo666/scriptable_ios --public --source=. --push
+1. 长按桌面空白处进入编辑模式，添加 **Scriptable** 小组件。
+2. 聚合面板推荐大号；中号最多展示两个并列模块，小号一个模块，各尺寸按空间限制条数。
+3. 编辑小组件，将 **Script** 选择为 `dashboard`，**Parameter** 填 `default`、`compact`，或留空使用默认面板。
+4. 独立列表可选择 `parcel-list`、`train-tickets`、`countdown-list`。
+5. 负一屏进入编辑模式，添加同样的 Scriptable 小组件，并选择脚本。
+
+本版适配桌面/今天视图的小、中、大号，不适配锁屏圆形、行内、矩形组件，也没有 iPad 超大号专用布局。实际负一屏排版和点击行为需真机确认。
+
+## 参数填写
+
+| 功能 | 直接选择脚本 | 直接脚本 Parameter | RemoteLauncher Parameter |
+| --- | --- | --- | --- |
+| 默认聚合面板 | `dashboard` | `default` 或留空 | `dashboard\|default` |
+| 紧凑聚合面板 | `dashboard` | `compact` | `dashboard\|compact` |
+| 待取快递 | `parcel-list` | 留空 | `parcel-list` |
+| 火车票 | `train-tickets` | 留空 | `train-tickets` |
+| 多事件倒计时 | `countdown-list` | 留空 | `countdown-list` |
+| 原单事件倒计时 | `countdown` | 事件名称，例如 `生日` | `countdown\|生日` |
+
+入口保留 `脚本名|脚本参数`，竖线后的完整内容传入远程脚本。入口参数留空时，默认仍为原来的 `countdown`，App 内可选其他脚本。默认/紧凑面板的模块配置独立保存，主题共用。
+
+直接使用已安装脚本的组件不访问 GitHub，适合离线使用并减少请求。使用入口的组件保留每次执行尝试同步全部脚本的行为。
+
+## 快递：录入、批量展示与取件
+
+运行 `parcel-list`，或在面板选择「管理快递」：
+
+- 「新增记录」填写快递公司/来源、取件码、驿站和备注。取件码按文字保存，保留 `0956` 等前导零。
+- 「选择记录」可编辑、删除、标记已取件、恢复待取件；记录选择按 15 条分页。
+- 组件只显示待取记录，最新录入优先，标题显示待取总数，超出空间显示「另 N 条」。已取件仍保留在数据库。
+- 「批量导入 JSON」可粘贴数组或选择 JSON 文件。校验并确认后追加；某条无效或 ID 冲突时整批拒绝。
+
+演示信息示例：
+
+```json
+[
+  { "company": "拼多多", "code": "3821", "station": "南门驿站", "note": "" },
+  { "company": "京东快递", "code": "7164", "station": "南门驿站" },
+  { "company": "圆通", "code": "0956", "station": "西门驿站" }
+]
 ```
 
-如果已经在网页创建了空仓库，直接执行：
+可选 `id`、`status`（`pending`/`collected`）、`createdAt`（带时区的 ISO 时间），省略时自动生成。没有人为保存条数上限，实际容量受设备存储和内存限制；组件只显示可容纳的前 N 条。
 
-```bash
-git push -u origin main
-```
+### 快捷指令与 URL Scheme
 
-若使用其他 GitHub 账号，请同时修改 `origin` 地址及 `RemoteLauncher.js` 的 `OWNER`。
+官方 [URLScheme](https://docs.scriptable.app/urlscheme/) 和 [args](https://docs.scriptable.app/args/) 提供运行脚本、查询参数、快捷指令参数能力。本项目实现了接收和确认路径，Mock 测试通过，仍需真实 iPhone 验证。
 
-## 在 Scriptable 中使用
-
-1. 在 Scriptable 中新建脚本，把 `RemoteLauncher.js` 的内容粘贴进去，命名为 `RemoteLauncher` 并保存。
-2. 运行入口脚本，会同步 `scripts/` 下全部 `.js` 并安装到 Scriptable 脚本列表。同步完成后选「返回列表」，即可看到 `countdown`；也可以选「选择脚本运行」，选 `countdown` 打开倒计时管理菜单。
-3. 添加桌面 Scriptable 小组件，选择此入口脚本，在参数里填写脚本名，例如 `countdown`，不需要 `.js` 后缀。
-4. 把自己的脚本放入 `scripts/`，提交并推送到 GitHub 后，下次入口运行会下载新版本。桌面小组件的实际刷新时间由 iOS 调度。
-
-示例 Raw 地址（发布后才可用）：
+快捷指令使用「URL → 打开 URL」，示例：
 
 ```text
-https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/countdown.js
+scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&code=0956
 ```
 
-入口通过 GitHub 目录 API 发现 `scripts/` 下的脚本，使用 Scriptable 的 [Request](https://docs.scriptable.app/request/) 分批下载全部脚本，并通过 [FileManager](https://docs.scriptable.app/filemanager/) 保存本地缓存。App 和桌面组件每次运行都会同步全部脚本，再执行选中的脚本。只有首次下载成功后，才能离线使用缓存。目录读取失败时按已有缓存和默认/指定脚本尝试下载；个别脚本下载或语法检查失败时保留旧缓存，其他脚本仍可更新。
+每个中文字段分别 URL 编码。也支持 `payload` 参数，其值为 URL 编码的单条 JSON 对象或数组，不要编码整个 URL。自定义脚本名时修改 `scriptName`。
 
-同步范围为 `scripts/` 目录直接包含的 `.js` 文件，文件名只支持字母、数字、下划线和连字符。以后新增脚本并推送到 GitHub 后，入口下次成功读取目录即可自动发现。脚本缓存不自动删除。手机中的入口本身仍需手动替换；远程脚本不需要逐个复制到 App。
+也可通过 Scriptable 运行脚本动作选择 `parcel-list`，把 JSON 文本/字典传给 `args.shortcutParameter`。为使用确认弹窗，请让动作在 Scriptable App 内运行；不是 App 环境时不导入。
 
-同步后的完整 `.js` 保存到入口所在存储空间的脚本文档目录：入口在 iCloud 时保存到 iCloud，入口在本地时保存到本地。Scriptable 的脚本存放在文档目录，参见 [FileManager 官方文档](https://docs.scriptable.app/filemanager/#-documentsdirectory)。每次运行入口会覆盖同名脚本，代码修改请在 GitHub 上完成；倒计时事件 JSON 不受影响。若远程脚本与当前入口文件同名，会跳过安装并提示改名，避免覆盖入口。
+外部输入先校验，弹窗确认后才保存。本机 URL 不发送给 GitHub，但内容可能留在快捷指令或系统记录中，不要写密码/Token。推荐通过快捷指令参数传递数据，不把私人内容固定在 URL 里。
 
-安装后可直接点击列表中的 `countdown` 管理事件，也可让桌面小组件直接选择 `countdown`，Parameter 只填事件名称，例如 `生日`。直接运行已安装的脚本不会触发远程同步，需要更新时运行 `RemoteLauncher`；桌面组件若继续使用入口和 `countdown|生日` 参数，则每次运行仍会同步全部脚本。
+本版**不自动读取拼多多、菜鸟、京东或短信**。没有确认到适用于个人取件码聚合的稳定授权接口，不使用抓 Cookie、逆向私有接口或虚构 API。见 [研究说明](docs/research.md)。
 
-远程脚本按独立脚本执行，支持顶层 `await`；需要复用本地模块时，可使用绝对路径。只加载你信任的脚本，公开仓库不要提交 Token、密码或私人配置，敏感值可放在设备的 Keychain 中。
+## 火车票：多行程管理
 
-## 多事件倒计时
+运行 `train-tickets`，或在面板选择「管理火车票」：
 
-### 直接安装（最简单）
+- 新增、编辑、删除多张车票，包含车次、日期、时间、站点、席别/座位、到达时间和备注。
+- 按出发时间升序显示，每张车票用两行展示路线和车次/时间/席别，小尺寸减少条数。
+- 默认隐藏已结束行程。填写到达日期/时间时以到达时刻判断；二者都留空时，以出发时刻作为隐藏阈值。菜单可切换显示全部行程。
+- 默认时区 `+08:00`，不因设备切换地区改变出发时刻。可用其他固定 UTC 偏移或 `local`；后者跟随设备时区。本版没有 IANA 时区及跨季节夏令时规则编辑。
+- 支持批量 JSON 导入，日期 `YYYY-MM-DD`、时间 `HH:mm`。
 
-1. 打开 [`scripts/countdown.js`](scripts/countdown.js)，复制全部代码到 Scriptable 的新脚本，命名为「倒计时」。
-2. 在 App 内运行「倒计时」，选择「添加事件」，填写名称、日期和可选文案。日期格式为 `YYYY-MM-DD`，例如 `2027-01-01`。
-3. 添加桌面 Scriptable 小组件，编辑小组件，将 Script 选择为「倒计时」。
-4. Parameter 填事件名称，例如 `生日`。添加多个组件，分别填不同名称即可共用这一个脚本。
-5. 参数留空显示默认事件。再次运行脚本，或点击组件打开菜单，可修改、删除、设置默认事件和预览。
+输入格式示例（不代表真实列车时刻）：
 
-### 使用远程入口
+```json
+[
+  {
+    "number": "G8603", "date": "2027-10-12", "time": "08:35",
+    "from": "成都东", "to": "重庆北", "seat": "二等座 03车05A",
+    "endDate": "2027-10-12", "endTime": "10:30", "offset": "+08:00"
+  },
+  {
+    "number": "G8612", "date": "2027-10-15", "time": "18:20",
+    "from": "重庆北", "to": "成都东", "seat": "二等座", "offset": "+08:00"
+  }
+]
+```
 
-1. 将最新的 `RemoteLauncher.js` 复制到 Scriptable，保存为「倒计时入口」。旧版入口需要重新复制一次代码，才能使用同步全部脚本和选择菜单。
-2. 运行一次入口，在脚本选择菜单选 `countdown`，添加事件。点击桌面组件后同样可以选择 `countdown` 进入管理菜单。
-3. 桌面小组件选择「倒计时入口」，Parameter 填 `countdown|生日`、`countdown|纪念日` 等；填 `countdown` 或留空显示默认事件。
+「添加到 iOS 日历」会确认、请求权限、选择可写日历，创建独立日程。重复添加会产生重复日程，后续修改/删除车票不自动同步日历。无到达时间时暂按一小时创建日历日程。日历可能按用户选择账户的系统设置同步，该操作由用户主动选择。
 
-远程入口参数格式为 `脚本名|脚本参数`，入口把竖线之后的完整内容传给远程脚本的 `args.widgetParameter`。
+不读取铁路 12306 App 内部数据，不自动获取订单。
 
-事件数据位于 Scriptable 本地 Documents 下的 `scriptable-countdown-events.json`，直接安装和远程加载共用这些事件。事件日期不写入代码，也不会上传到 GitHub；修改或更新脚本不会清除事件。数据不跨设备同步；删除 App 前请备份该文件。配置读取失败时保留原文件并提示错误。
+## 多事件倒计时与原功能兼容
 
-倒计时按设备本地日历日期计算：明天显示 1，今天显示 0，过期显示已过去的天数。事件是一次性公历日期，不自动按年或农历重复。组件使用纯色背景，支持桌面小号、中号、大号，暂不提供图片或透明背景。脚本请求午夜后刷新，实际刷新仍由 iOS 决定。
+`countdown-list` 与面板直接读写原 `scriptable-countdown-events.json`，不建立第二份事件数据库：
 
-## 更新脚本
+- 原 `countdown` 管理菜单、默认事件和事件名称参数保留。
+- 新列表和面板可新增、编辑、删除，也可设原单事件组件的默认事件。
+- 按日期升序，今天显示「就是今天」，未来「还有 N 天」，过去「已过 N 天」。过期事件不自动删除。
+- 按设备本地日历日期计数，避免当天剩余小时造成少一天；不自动按年或农历重复。
+
+## 配置聚合面板
+
+运行 `dashboard` 的中文菜单：
+
+1. 预览聚合组件：大、中、小号。
+2. 管理快递。
+3. 管理火车票。
+4. 管理倒计时。
+5. 选择显示模块 / 条数：选择默认/紧凑配置，启用/禁用、设置条数（1—20）、切换空模块隐藏。
+6. 调整显示顺序：选择模块和目标位置。
+7. 修改组件主题：跟随系统、浅色、深色，以及六位 HEX 强调色，如 `#007AFF`。
+8. 数据备份与恢复。
+9. 日历授权与缓存。
+10. 切换预览配置（默认/紧凑）。
+
+大号最多四个纵向圆角卡片，中号两个并列卡片，小号第一个有内容的启用模块。设置条数是上限，实际还要满足高度预算；超长文字单行缩放/截断。后续模块被省略时显示提示，数据全部保留在管理菜单。
+
+日历默认关闭。启用后通过 [CalendarEvent.between](https://docs.scriptable.app/calendarevent/#-between) 读取指定天数的日程，存本地缓存。App 内打开面板时，缓存超过 15 分钟会尝试更新，也可手动刷新。Widget 仅读缓存，不弹权限；缓存超过一天提示刷新。
+
+中、大号支持卡片区域点击，打开对应管理菜单；小号只有一个点击目标，打开当前组件管理入口后选择模块。依据 [WidgetStack.url](https://docs.scriptable.app/widgetstack/#url)，区域点击只支持中、大号。直接脚本、改名脚本和远程入口均使用当前脚本链接，实际系统跳转待真机确认。
+
+## 远程更新与离线
+
+- 入口发现 `scripts/` 直接包含的 `.js`，分批下载全部脚本。文件名支持字母、数字、下划线和连字符。
+- 成功 HTTP 响应还需排除 HTML、JSON 和语法错误，才覆盖缓存；安装和执行缓存时再次检查。
+- 这是格式/语法检查，不是代码签名或沙箱。只从可信仓库更新。
+- 个别失败保留有效缓存，不影响其他脚本更新；首次无缓存且离线不能完成下载。
+- 安装到入口所在的本地/iCloud 脚本文档目录，出现在脚本列表。目录行为见 [FileManager](https://docs.scriptable.app/filemanager/#-documentsdirectory)。
+- 同名 `.js` 更新会覆盖设备代码，**不会覆盖数据 JSON**。代码修改请在 GitHub 完成。
+- 不自动删除旧脚本/缓存；脚本与入口同名时跳过安装并提示改名。
+- 手机入口自身仍需手动替换。直接运行已安装组件不更新代码，要更新请运行 `RemoteLauncher`。
+- GitHub 请求失败或限流时使用缓存。减少请求可让桌面组件直接选择已安装脚本。
+
+新组件请求 30 分钟后允许刷新，原倒计时保留午夜刷新请求。**实际刷新由 iOS 决定，不能保证实时或精确按时刷新。**
+
+## 数据备份与恢复
+
+私人数据只使用 `FileManager.local()`，即使代码装在 iCloud，记录也不写入 iCloud 脚本目录或上传 GitHub：
+
+```text
+本地 Documents/
+  scriptable-countdown-events.json       原倒计时数据库（共用）
+  scriptable-info-data/
+    parcels.json                        快递
+    trains.json                         车票及隐藏设置
+    dashboard.json                      面板与主题配置
+    calendar-cache.json                 日历缓存
+  scriptable-remote-cache/               代码缓存
+```
+
+读写校验格式并保存 `.last-good` 有效快照。损坏原文件保留，新组件显示有效快照并提示；损坏时禁止普通编辑，避免覆盖。配置损坏不令整个组件无法显示。
+
+备份菜单可导出完整 JSON 文件、校验并确认恢复全部数据、恢复单个文件的有效快照。完整恢复替换快递、车票、倒计时和配置；原文件保留 `.before-restore-*` 副本，写入失败尝试回滚。无有效快照时需导入先前备份。
+
+备份格式：`{"format":"scriptable-info-backup","version":1,"exportedAt":"ISO 时间","data":{"parcels":...,"trains":...,"countdowns":...,"settings":...}}`。日历缓存不备份，可重新刷新。单项 JSON 导入追加记录，完整恢复替换记录。
+
+备份包含私人信息，只保存到你选的位置，不要上传公开仓库。数据不自动跨设备同步，卸载 App 前请导出备份。原 `countdown` 没有新增恢复菜单，文件损坏可用新列表或面板恢复。
+
+## 常见问题与限制
+
+- **新增脚本没出现？** 替换最新入口，运行并检查结果，返回列表；确认本地/iCloud 目录可写。
+- **组件没有最新记录？** 先 App 预览确认，再等待系统刷新。检查 Script 和参数，直接 `dashboard` 不填 `dashboard|default`。
+- **显示不全？** 选择大号、调整顺序和条数；组件尺寸限制不影响保存数量。
+- **日历空白？** 启用、允许权限、刷新缓存。关闭日历会清除当前缓存。
+- **文件损坏？** 使用快照或完整备份恢复，不要重新录入覆盖原文件。
+- **超长文字？** 小组件截断，管理表单保留完整内容。
+- **快捷指令未导入？** 检查脚本名称、编码、JSON 和 App 运行环境；需输入确认及真机验证。
+- **其他 App 自动读取？** 没有，第一版使用手动、JSON、快捷指令和官方日历 API。
+- 图片/透明背景、更多外部数据源、锁屏组件不属于本版功能。
+
+## 目录与开发
+
+```text
+RemoteLauncher.js
+scripts/
+  countdown.js            原单事件组件（原代码保留）
+  parcel-list.js          快递列表
+  train-tickets.js        火车票
+  countdown-list.js       多事件倒计时
+  dashboard.js            聚合面板
+src/
+  logic.js                校验、排序、日期与布局预算
+  runtime.js              本地存储、提供器、渲染、中文交互
+tools/
+  build.mjs               生成四个完整独立脚本
+  check.mjs               语法、一致性、自动化检查
+tests/                    纯逻辑和 Scriptable Mock
+docs/                     研究记录及真机验收步骤
+```
+
+手机不依赖 `shared/`。在开发电脑修改 `src/` 后生成并检查，无需 npm install：
 
 ```bash
-git add .
-git commit -m "Update scripts"
-git push
+node tools/build.mjs
+node tools/check.mjs
+git add README.md RemoteLauncher.js scripts src tools tests docs
+git commit -m "更新信息组件"
+git push origin main
 ```
+
+扩展模块时在逻辑模块清单、`section` 数据提供器、`renderSection` 渲染层注册，使用独立缓存和错误隔离，再生成脚本。参考研究见 [research.md](docs/research.md)，测试与真机清单见 [validation.md](docs/validation.md)。自动化通过不等于 iOS 真机验证完成。

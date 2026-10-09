@@ -7,3 +7,9 @@ node_modules/
 !.env.example
 *.log
 
+# 设备私人数据和导出的备份不提交到公开仓库。
+scriptable-info-data/
+scriptable-remote-cache/
+scriptable-countdown-events.json*
+信息组件备份*.json
+

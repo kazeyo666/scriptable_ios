@@ -8,7 +8,7 @@ const OWNER = "kazeyo666";
 const REPO = "scriptable_ios";
 const BRANCH = "main";
 const DEFAULT_SCRIPT = "countdown";
-const parameter = String(args.widgetParameter || "").trim();
+const parameter = String(args.widgetParameter || args.queryParameters?.remoteScript || "").trim();
 const separator = parameter.indexOf("|");
 let name = (separator < 0 ? parameter : parameter.slice(0, separator)).trim()
   .replace(/\.js$/, "") || DEFAULT_SCRIPT;
@@ -26,6 +26,16 @@ fm.createDirectory(cacheDir, true);
 const cachePrefix = `${OWNER}-${REPO}-${BRANCH}-`;
 const rawBase = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/scripts/`;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+function validateSource(source) {
+  if (typeof source !== "string" || !source.trim() || /^\s*</.test(source)) {
+    throw new Error("响应不是有效脚本，未覆盖旧缓存。");
+  }
+  let json = false;
+  try { JSON.parse(source); json = true; } catch (_) { /* 脚本不是 JSON */ }
+  if (json) throw new Error("响应为 JSON 数据，未覆盖旧缓存。");
+  new AsyncFunction("args", source);
+  return source;
+}
 const cachePathFor = script => fm.joinPath(cacheDir, `${cachePrefix}${script}.js`);
 let names;
 
@@ -61,7 +71,7 @@ for (let offset = 0; offset < syncNames.length; offset += 3) {
       throw new Error(`下载失败：HTTP ${request.response.statusCode}`);
     }
     // 语法检查成功后才覆盖该脚本缓存。
-    new AsyncFunction("args", source);
+    validateSource(source);
     fm.writeString(cachePathFor(script), source);
   }));
   results.forEach((result, index) => {
@@ -85,7 +95,7 @@ for (const script of syncNames) {
       throw new Error("与当前入口文件同名，请先将入口改名为 RemoteLauncher 再同步。");
     }
     const source = fm.readString(cachePath);
-    new AsyncFunction("args", source);
+    validateSource(source);
     scriptFiles.writeString(scriptPath, source);
     installed++;
   } catch (error) {
@@ -137,7 +147,7 @@ async function selectAndRun() {
       throw new Error(`无法加载 ${name}.js：${failures.get(name) || "没有本地缓存"}\n下载地址：${rawBase}${name}.js`);
     }
     if (failures.has(name)) console.warn(`${name} 使用上次下载的脚本缓存。`);
-    const run = new AsyncFunction("args", fm.readString(cachePath));
+    const run = new AsyncFunction("args", validateSource(fm.readString(cachePath)));
     // 代理其余原生参数，单独传递脚本参数，不修改 Scriptable 的全局 args。
     const scriptArgs = new Proxy(args, {
       get(target, key) {
