@@ -31,7 +31,7 @@ git push -u origin main
 ## 在 Scriptable 中使用
 
 1. 在 Scriptable 中新建脚本，把 `RemoteLauncher.js` 的内容粘贴进去并保存。
-2. 仓库发布后，运行入口脚本，会下载并运行 `scripts/hello.js`。
+2. 运行入口脚本，会默认下载并运行 `scripts/countdown.js`，打开倒计时管理菜单。
 3. 添加桌面 Scriptable 小组件，选择此入口脚本，在参数里填写脚本名，例如 `hello`，不需要 `.js` 后缀。
 4. 把自己的脚本放入 `scripts/`，提交并推送到 GitHub 后，下次入口运行会下载新版本。桌面小组件的实际刷新时间由 iOS 调度。
 
@@ -57,7 +57,7 @@ https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/hello.js
 
 ### 使用远程入口
 
-1. 将最新的 `RemoteLauncher.js` 复制到 Scriptable，并把其中的 `DEFAULT_SCRIPT` 改为 `"countdown"`，保存为「倒计时入口」。这样在 App 中运行入口或点击组件就会打开倒计时管理菜单。
+1. 将最新的 `RemoteLauncher.js` 复制到 Scriptable，保存为「倒计时入口」。入口已默认加载倒计时，在 App 中运行入口或点击组件就会打开倒计时管理菜单。旧版入口需要重新复制代码，或把 `DEFAULT_SCRIPT` 从 `"hello"` 改为 `"countdown"`。
 2. 运行一次入口，添加事件。
 3. 桌面小组件选择「倒计时入口」，Parameter 填 `countdown|生日`、`countdown|纪念日` 等；填 `countdown` 或留空显示默认事件。
 

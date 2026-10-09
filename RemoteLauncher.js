@@ -5,7 +5,7 @@
 const OWNER = "kazeyo666";
 const REPO = "scriptable_ios";
 const BRANCH = "main";
-const DEFAULT_SCRIPT = "hello"; // 倒计时入口可改成 "countdown"。
+const DEFAULT_SCRIPT = "countdown";
 const parameter = String(args.widgetParameter || "").trim();
 const separator = parameter.indexOf("|");
 const name = (separator < 0 ? parameter : parameter.slice(0, separator)).trim()
