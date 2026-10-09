@@ -7,6 +7,7 @@
 - `scripts/`：远程脚本，每个脚本一个 `.js` 文件。
 - `RemoteLauncher.js`：复制到 Scriptable 的本地入口，每次运行下载指定脚本，下载失败时使用缓存。
 - `scripts/hello.js`：用于检查远程加载的小组件示例。
+- `scripts/countdown.js`：通过菜单管理多个倒计时，事件保存在设备本地。
 
 ## 发布到 GitHub
 
@@ -43,6 +44,28 @@ https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/hello.js
 入口使用 Scriptable 的 [Request](https://docs.scriptable.app/request/) 下载脚本，并通过 [FileManager](https://docs.scriptable.app/filemanager/) 保存本地缓存。只有首次下载成功后，才能离线使用缓存。
 
 远程脚本按独立脚本执行，支持顶层 `await`；需要复用本地模块时，可使用绝对路径。只加载你信任的脚本，公开仓库不要提交 Token、密码或私人配置，敏感值可放在设备的 Keychain 中。
+
+## 多事件倒计时
+
+### 直接安装（最简单）
+
+1. 打开 [`scripts/countdown.js`](scripts/countdown.js)，复制全部代码到 Scriptable 的新脚本，命名为「倒计时」。
+2. 在 App 内运行「倒计时」，选择「添加事件」，填写名称、日期和可选文案。日期格式为 `YYYY-MM-DD`，例如 `2027-01-01`。
+3. 添加桌面 Scriptable 小组件，编辑小组件，将 Script 选择为「倒计时」。
+4. Parameter 填事件名称，例如 `生日`。添加多个组件，分别填不同名称即可共用这一个脚本。
+5. 参数留空显示默认事件。再次运行脚本，或点击组件打开菜单，可修改、删除、设置默认事件和预览。
+
+### 使用远程入口
+
+1. 将最新的 `RemoteLauncher.js` 复制到 Scriptable，并把其中的 `DEFAULT_SCRIPT` 改为 `"countdown"`，保存为「倒计时入口」。这样在 App 中运行入口或点击组件就会打开倒计时管理菜单。
+2. 运行一次入口，添加事件。
+3. 桌面小组件选择「倒计时入口」，Parameter 填 `countdown|生日`、`countdown|纪念日` 等；填 `countdown` 或留空显示默认事件。
+
+远程入口参数格式为 `脚本名|脚本参数`，入口把竖线之后的完整内容传给远程脚本的 `args.widgetParameter`。原来的 `hello` 参数仍然可用。
+
+事件数据位于 Scriptable 本地 Documents 下的 `scriptable-countdown-events.json`，直接安装和远程加载共用这些事件。事件日期不写入代码，也不会上传到 GitHub；修改或更新脚本不会清除事件。数据不跨设备同步；删除 App 前请备份该文件。配置读取失败时保留原文件并提示错误。
+
+倒计时按设备本地日历日期计算：明天显示 1，今天显示 0，过期显示已过去的天数。事件是一次性公历日期，不自动按年或农历重复。组件使用纯色背景，支持桌面小号、中号、大号，暂不提供图片或透明背景。脚本请求午夜后刷新，实际刷新仍由 iOS 决定。
 
 ## 更新脚本
 
