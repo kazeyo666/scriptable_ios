@@ -70,9 +70,37 @@ const InfoLogic = (() => {
   }
   function defaults() {
     const modules = moduleIds.map(id => ({ id, enabled: id !== "calendar", maxItems: id === "parcels" ? 3 : 2 }));
-    return { version: 1, theme: { mode: "system", accent: "#007AFF" },
+    return { version: 1, theme: { mode: "system", accent: "#007AFF" }, background: backgroundDefaults(),
       profiles: { default: { modules, hideEmpty: true }, compact: { modules: modules.map(m => ({ ...m, maxItems: 1 })), hideEmpty: true } },
       calendar: { enabled: false, days: 7 } };
+  }
+  function backgroundDefaults() {
+    return { mode: "theme", text: "light", dim: 0.25, photo: null, transparent: { small: null, medium: null, large: null } };
+  }
+  function validateBackground(value) {
+    if (value === undefined) return backgroundDefaults(); // 兼容此前保存的配置和备份。
+    assert(value && ["theme", "photo", "transparent"].includes(value.mode), "背景模式无效");
+    assert(["light", "dark"].includes(value.text) && Number.isFinite(value.dim) && value.dim >= 0 && value.dim <= 0.8, "背景文字或遮罩无效");
+    const file = name => { assert(name === null || (typeof name === "string" && /^[a-zA-Z0-9_-]+\.png$/.test(name)), "背景文件名无效"); return name; };
+    assert(value.transparent && typeof value.transparent === "object", "透明背景配置无效");
+    const transparent = {};
+    for (const family of ["small", "medium", "large"]) transparent[family] = file(value.transparent[family]);
+    return { mode: value.mode, text: value.text, dim: value.dim, photo: file(value.photo), transparent };
+  }
+  function cropRect(rect, size) {
+    assert(size && Number.isFinite(size.width) && Number.isFinite(size.height) && size.width > 0 && size.height > 0, "图片尺寸无效");
+    assert(rect && [rect.x, rect.y, rect.width, rect.height].every(Number.isInteger), "裁剪坐标必须是整数像素");
+    assert(rect.x >= 0 && rect.y >= 0 && rect.width > 0 && rect.height > 0 && rect.x + rect.width <= size.width && rect.y + rect.height <= size.height, "裁剪范围超出图片");
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  }
+  function cropSuggestion(size, family, position = 0) {
+    assert(["small", "medium", "large"].includes(family), "组件尺寸无效");
+    const width = Math.max(1, Math.min(Math.round(size.width * (family === "small" ? 0.405 : 0.866)), size.width));
+    const height = Math.max(1, Math.min(Math.round(size.width * (family === "large" ? 0.907 : 0.405)), size.height));
+    const row = family === "small" ? Math.floor(position / 2) : position;
+    const x = Math.min(size.width - width, Math.round(size.width * (family === "small" && position % 2 ? 0.528 : 0.067)));
+    const y = Math.min(size.height - height, Math.round(size.width * (0.2 + row * 0.503)));
+    return cropRect({ x, y, width, height }, size); // 仅为起始框，用户需按桌面实际位置校准。
   }
   function validate(key, input) {
     assert(input && typeof input === "object" && !Array.isArray(input), "数据必须是 JSON 对象");
@@ -115,7 +143,7 @@ const InfoLogic = (() => {
       assert(input.calendar && typeof input.calendar.enabled === "boolean"
         && Number.isInteger(input.calendar.days) && input.calendar.days >= 1 && input.calendar.days <= 30, "日历配置无效");
       return { version: 1, theme: { mode: input.theme.mode, accent: input.theme.accent }, profiles,
-        calendar: { enabled: input.calendar.enabled, days: input.calendar.days } };
+        calendar: { enabled: input.calendar.enabled, days: input.calendar.days }, background: validateBackground(input.background) };
     }
     if (key === "calendar") {
       assert(Array.isArray(input.items), "日历缓存格式无效");
@@ -243,5 +271,5 @@ const InfoLogic = (() => {
   }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
     validate, empty, defaults, parcels, trains, countdowns, importItems, mergeItems, validateBackup,
-    truncate, metrics, planLayout, planDashboard, moduleIds };
+    truncate, metrics, planLayout, planDashboard, moduleIds, backgroundDefaults, validateBackground, cropRect, cropSuggestion };
 })();

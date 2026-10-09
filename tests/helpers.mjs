@@ -5,11 +5,12 @@ import assert from "node:assert/strict";
 export const logicSource = readFileSync(new URL("../src/logic.js", import.meta.url), "utf8");
 export const runtimeSource = readFileSync(new URL("../src/runtime.js", import.meta.url), "utf8");
 export const dashboardSource = readFileSync(new URL("../src/dashboard.js", import.meta.url), "utf8");
+export const backgroundSource = readFileSync(new URL("../src/background.js", import.meta.url), "utf8");
 export const plain = value => JSON.parse(JSON.stringify(value));
 export function harness(options = {}) {
   const files = new Map(Object.entries(options.files || {}));
   const nodes = [], dialogs = [], queue = [...(options.responses || [])];
-  const requests = [], calendars = [], exported = [];
+  const requests = [], calendars = [], exported = [], webviews = [], drawings = [];
   let rendered, complete = false, calendarReads = 0, writes = 0;
   class Stack {
     constructor() { this.children = []; nodes.push(this); }
@@ -28,6 +29,8 @@ export function harness(options = {}) {
     joinPath: (a, b) => a + "/" + b, createDirectory() {},
     fileExists: path => files.has(path), readString(path) { if (!files.has(path)) throw Error("missing file"); return files.get(path); },
     writeString(path, value) { writes++; if (options.failWrite?.(path, writes)) throw Error("disk failure"); files.set(path, value); },
+    readImage(path) { if (!files.has(path) || !files.get(path)?.size || options.imageError) throw Error("invalid image"); return files.get(path); },
+    writeImage(path, image) { writes++; if (options.failWrite?.(path, writes)) throw Error("disk failure"); files.set(path, image); },
     remove: path => files.delete(path), listContents: path => [...files.keys()].filter(p => p.startsWith(path + "/")).map(p => p.slice(path.length + 1)),
     isFileStoredIniCloud: path => path.startsWith("/icloud/"), async downloadFileFromiCloud() {},
   });
@@ -50,6 +53,20 @@ export function harness(options = {}) {
     async save() { calendars.push(this); }
     static async between() { calendarReads++; if (options.calendarError) throw Error("permission denied"); return options.calendarEvents || []; }
   }
+  class WebView {
+    constructor() { webviews.push(this); }
+    async loadHTML(html) { this.html = html; }
+    async present() { assert.equal(context.config.runsInApp, true, "组件不得打开裁剪界面"); }
+    async evaluateJavaScript() { return options.cropResult || null; }
+  }
+  class DrawContext {
+    constructor() { this.operations = []; drawings.push(this); }
+    drawImageAtPoint(image, point) { this.operations.push({ image, point }); }
+    drawImageInRect(image, rect) { this.operations.push({ image, rect }); }
+    setFillColor(color) { this.fillColor = color; }
+    fillRect(rect) { this.operations.push({ color: this.fillColor, rect }); }
+    getImage() { return { size: this.size, operations: this.operations }; }
+  }
   const context = vm.createContext({
     console: { warn() {}, log() {}, error() {} }, Date, JSON, Map, Set,
     config: { runsInApp: options.app || false, runsInWidget: !options.app, widgetFamily: options.family || "large" },
@@ -57,10 +74,15 @@ export function harness(options = {}) {
     module: { filename: options.launcherPath || "/docs/RemoteLauncher.js" },
     FileManager: { local: () => manager(false), iCloud: () => manager(true) },
     Alert, Color, ListWidget: Stack, Size: class { constructor(width, height) { this.width = width; this.height = height; } },
+    Point: class { constructor(x, y) { this.x = x; this.y = y; } },
+    Rect: class { constructor(x, y, width, height) { Object.assign(this, { x, y, width, height }); } },
+    DrawContext, WebView,
+    Data: { fromPNG: () => ({ toBase64String: () => "aW1hZ2U=" }) },
+    Photos: { fromLibrary: async () => { assert.equal(context.config.runsInApp, true); if (options.cancelPhoto) throw Error("cancel"); return options.image || { size: { width: 1170, height: 2532 } }; } },
     Font: { semiboldSystemFont: size => ({ size, weight: 600 }), systemFont: size => ({ size, weight: 400 }), boldRoundedSystemFont: size => ({ size, weight: 700, rounded: true }) },
     SFSymbol: { named: name => ({ image: { symbol: name } }) },
     Device: { screenSize: () => ({ width: options.screenWidth || 375, height: 812 }) },
-    UUID: { string: () => `generated-${writes}-${nodes.length}-${Math.random()}` },
+    UUID: { string: () => `generated-${writes}-${nodes.length}-${Math.random().toString(36).slice(2)}` },
     Script: { name: () => options.scriptName || "RemoteLauncher", setWidget(value) { rendered = value; }, complete() { complete = true; } },
     CalendarEvent, Calendar: { forEvents: async () => [{ title: "个人日历", allowsContentModifications: true }] },
     DocumentPicker: { open: async () => [options.importPath || "/docs/import.json"], exportString: async (...value) => { exported.push(value); } },
@@ -82,8 +104,8 @@ export function harness(options = {}) {
       }
     },
   });
-  const api = vm.runInContext(logicSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard})", context);
-  return { ...api, files, nodes, dialogs, requests, exported, calendars, queue, context,
+  const api = vm.runInContext(logicSource + "\n" + backgroundSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,cropHTML:infoCropHTML})", context);
+  return { ...api, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, queue, context,
     evaluate: source => vm.runInContext(`(async()=>{${source}\n})()`, context),
     get rendered() { return rendered; }, get complete() { return complete; }, get calendarReads() { return calendarReads; },
     text() { const values = []; const visit = node => { if (node.kind === "text") values.push(node.value); for (const child of node.children || []) visit(child); }; visit(rendered); return values.join("\n"); },

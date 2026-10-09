@@ -133,12 +133,31 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 8. 数据备份与恢复。
 9. 日历授权与缓存。
 10. 切换预览配置（默认/紧凑）。
+11. 设置组件背景（透明/图片）：桌面截图裁剪、相册图片、文字颜色和暗色遮罩。
 
 大号最多四个纵向分区，用细线分隔；中号两个并列分区，小号聚焦第一个有内容的启用模块。日期作为主标题，取件码使用醒目的数字字体，倒计时右侧显示剩余天数标签；今天和过期事件有明确文字。设置条数是上限，实际还要满足高度预算；超长文字单行缩放/截断。后续模块被省略时显示提示，数据全部保留在管理菜单。
 
 日历默认关闭。启用后通过 [CalendarEvent.between](https://docs.scriptable.app/calendarevent/#-between) 读取指定天数的日程，存本地缓存。App 内打开面板时，缓存超过 15 分钟会尝试更新，也可手动刷新。Widget 仅读缓存，不弹权限；缓存超过一天提示刷新。
 
 中、大号支持卡片区域点击，打开对应管理菜单；小号只有一个点击目标，打开当前组件管理入口后选择模块。依据 [WidgetStack.url](https://docs.scriptable.app/widgetstack/#url)，区域点击只支持中、大号。直接脚本、改名脚本和远程入口均使用当前脚本链接，实际系统跳转待真机确认。
+
+## 设置透明背景和图片背景
+
+先运行 `RemoteLauncher` 更新，再在 Scriptable 中打开 `dashboard` → **设置组件背景（透明/图片）**。背景由默认和紧凑面板共用，只影响 Dashboard。首次没有选图时继续使用主题背景。
+
+**透明效果（桌面截图）**：
+
+1. 在 iPhone 桌面长按进入编辑模式，滑到空白页并截图。保持同一张桌面壁纸、显示缩放和图标大小。
+2. 选择“制作透明背景（桌面截图）”，选择大、中、小号和桌面位置，从相册选刚才的截图。
+3. 在本地裁剪页面拖动白框，拖动右下角蓝点调整宽高；也可填写 X、Y、宽、高像素值。初始选框只是参考，需要按桌面实际组件边界校准，可先截一张带组件的桌面图作为位置参考。
+4. 点“确认裁剪范围”，再点页面顶部的完成按钮返回，裁剪图片才会保存；直接关闭或确认后再次调整而未重新确认则取消。
+5. 把 Dashboard 放到所选位置并检查效果。换壁纸、位置、显示缩放或图标大小后重新制作。不同组件尺寸需分别设置，同一尺寸目前保存一个位置。
+
+透明效果通过壁纸裁剪模拟，不会透视桌面；截图需与实际组件宽高一致，裁剪页面不根据机型表宣称自动精确定位。透明背景不加遮罩，深浅壁纸可分别选白色或深色文字。动态壁纸、系统壁纸变化和负一屏无法保证对齐，负一屏建议使用图片背景。
+
+**相册图片**：选择“选择相册图片背景”，授权后选图，自动生成三个尺寸的居中裁剪图片。可设置白色/深色文字和 0—80% 暗色遮罩（默认 25%）；遮罩只用于相册图片。支持“恢复主题背景”，也可切回已保存的透明背景或相册图片。
+
+图片通过 [Photos.fromLibrary](https://docs.scriptable.app/photos/#-fromlibrary) 选择，裁剪界面用本地 [WebView](https://docs.scriptable.app/webview/)，实际裁剪用 [DrawContext](https://docs.scriptable.app/drawcontext/)；不上传图片，也不加载远程裁剪服务。设置在 App 内进行，小组件只读本地 PNG，缺少当前尺寸或图片损坏时回退主题并提示。图片不会因为更新 JS 被删除。
 
 ## 远程更新与离线
 
@@ -166,6 +185,7 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
     trains.json                         车票及隐藏设置
     dashboard.json                      面板与主题配置
     calendar-cache.json                 日历缓存
+    backgrounds/                        本地原图、图片背景和透明裁剪图
   scriptable-remote-cache/               代码缓存
 ```
 
@@ -173,7 +193,7 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 
 备份菜单可导出完整 JSON 文件、校验并确认恢复全部数据、恢复单个文件的有效快照。完整恢复替换快递、车票、倒计时和配置；原文件保留 `.before-restore-*` 副本，写入失败尝试回滚。无有效快照时需导入先前备份。
 
-备份格式：`{"format":"scriptable-info-backup","version":1,"exportedAt":"ISO 时间","data":{"parcels":...,"trains":...,"countdowns":...,"settings":...}}`。日历缓存不备份，可重新刷新。单项 JSON 导入追加记录，完整恢复替换记录。
+备份格式：`{"format":"scriptable-info-backup","version":1,"exportedAt":"ISO 时间","data":{"parcels":...,"trains":...,"countdowns":...,"settings":...}}`。日历缓存不备份，可重新刷新。背景设置会备份，但 PNG 图片不包含在 JSON 中，换设备或重装 App 后需重新选择图片/截图；同一设备上的现有图片保留。单项 JSON 导入追加记录，完整恢复替换记录。
 
 备份包含私人信息，只保存到你选的位置，不要上传公开仓库。数据不自动跨设备同步，卸载 App 前请导出备份。原 `countdown` 没有新增恢复菜单，文件损坏可用新列表或面板恢复。
 
@@ -187,7 +207,8 @@ scriptable:///run?scriptName=parcel-list&action=add&company=%E5%9C%86%E9%80%9A&c
 - **超长文字？** 小组件截断，管理表单保留完整内容。
 - **快捷指令未导入？** 检查脚本名称、编码、JSON 和 App 运行环境；需输入确认及真机验证。
 - **其他 App 自动读取？** 没有，第一版使用手动、JSON、快捷指令和官方日历 API。
-- 图片/透明背景、更多外部数据源、锁屏组件不属于本版功能。
+- **透明背景对不上？** 检查选图、裁剪像素、组件尺寸和位置；初始框需校准。负一屏建议使用图片背景。
+- 更多外部数据源、锁屏组件不属于本版功能。
 
 ## 目录与开发
 
@@ -202,6 +223,7 @@ scripts/
   manifest.json           自动生成的备用发现清单
 src/
   logic.js                校验、排序、日期与布局预算
+  background.js           本地图片处理与透明背景裁剪界面
   dashboard.js            聚合面板专用呈现层
   runtime.js              本地存储、提供器、渲染、中文交互
 tools/

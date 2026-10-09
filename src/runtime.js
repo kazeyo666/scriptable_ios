@@ -279,7 +279,7 @@ function createInfoSuite() {
     }
   }
   async function backupMenu() {
-    const action = await choose("数据备份与恢复", ["导出全部数据为 JSON 文件", "从 JSON 恢复全部数据", "恢复损坏文件的有效快照"], "备份包含私人数据，仅在你选择的位置保存。恢复会替换全部数据，原文件保留恢复前副本。");
+    const action = await choose("数据备份与恢复", ["导出全部数据为 JSON 文件", "从 JSON 恢复全部数据", "恢复损坏文件的有效快照"], "备份包含私人数据，仅在你选择的位置保存。恢复会替换全部数据，原文件保留恢复前副本。JSON 不包含背景图片，换设备恢复后需重新选择图片或桌面截图。");
     if (action === 0) await DocumentPicker.exportString(JSON.stringify(backupObject(), null, 2), "信息组件备份.json");
     if (action === 1) {
       const input = await readImport(); if (input === null) return;
@@ -329,6 +329,82 @@ function createInfoSuite() {
     const mode = await choose("主题模式", ["跟随系统", "浅色", "深色"]); if (mode < 0) return;
     const input = await fields("主题强调色", [["六位 HEX，例如 #007AFF", data.theme.accent]]); if (!input) return;
     data.theme = { mode: ["system", "light", "dark"][mode], accent: input[0] }; write("settings", data);
+  }
+  const backgroundRoot = fm.joinPath(root, "backgrounds");
+  const backgroundPath = file => fm.joinPath(backgroundRoot, file);
+  const photoFile = (name, family) => name.replace(/\.png$/, `-${family}.png`);
+  function backgroundFor(settings, family) {
+    const bg = settings.background;
+    if (bg.mode === "theme") return { image: null, warning: "" };
+    const name = bg.mode === "photo" ? bg.photo && photoFile(bg.photo, family) : bg.transparent[family];
+    if (!name) return { image: null, warning: `请在 App 设置${{ small: "小号", medium: "中号", large: "大号" }[family]}背景` };
+    try {
+      L.assert(fm.fileExists(backgroundPath(name)), "背景文件不存在");
+      return { image: fm.readImage(backgroundPath(name)), warning: "" };
+    } catch (_) { return { image: null, warning: "背景不可用 · 请在 App 重新选择" }; }
+  }
+  function saveBackground(settings, images) {
+    fm.createDirectory(backgroundRoot, true);
+    // 文件名每次不同；取消或保存失败不会改写正在使用的背景。
+    const created = [];
+    try {
+      for (const [name, image] of images) { const path = backgroundPath(name); created.push(path); fm.writeImage(path, image); }
+      write("settings", settings);
+    } catch (error) {
+      // 配置若已经写入（例如最后快照失败），保留其引用的图片。
+      let committed = false;
+      try { committed = fm.readString(pathFor("settings")) === JSON.stringify(L.validate("settings", settings), null, 2); } catch (_) {}
+      if (!committed) for (const path of created) { try { fm.remove(path); } catch (_) {} }
+      throw error;
+    }
+  }
+  async function backgroundMenu() {
+    while (true) {
+      const settings = editable("settings"), bg = settings.background;
+      const action = await choose("组件背景", ["制作透明背景（桌面截图）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片"],
+        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。默认/紧凑面板共用背景。透明效果需按尺寸裁剪桌面壁纸；不支持真正透视桌面。`);
+      if (action < 0) return;
+      if (action === 0) {
+        const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。选框需与最终组件边界对齐；换位置或壁纸后需重做。负一屏请使用图片背景。");
+        if (proceed < 0) continue;
+        const size = await choose("透明背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
+        const family = ["large", "medium", "small"][size];
+        const positions = family === "small" ? ["顶部左侧", "顶部右侧", "中间左侧", "中间右侧", "底部左侧", "底部右侧"]
+          : family === "large" ? ["顶部", "底部"] : ["顶部", "中间", "底部"];
+        const position = await choose("组件在桌面的位置", positions, "位置提供初始选框，下一步可以拖动并精调。"); if (position < 0) continue;
+        let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
+        const rect = await editInfoCrop(image, family, position); if (!rect) continue;
+        const name = `transparent-${uuid()}.png`;
+        bg.mode = "transparent"; bg.transparent[family] = name;
+        saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
+        await notify("透明背景已保存", `已保存${["大号", "中号", "小号"][size]}背景。将组件放到刚才的位置；其他尺寸需分别设置。透明背景不叠加遮罩，图片文字颜色可单独修改。`);
+      }
+      if (action === 1) {
+        let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
+        const name = `photo-${uuid()}.png`;
+        bg.mode = "photo"; bg.photo = name;
+        saveBackground(settings, [[name, image], ...["small", "medium", "large"].map(family => [photoFile(name, family), photoInfoImage(image, family, bg.dim)])]);
+        await notify("图片背景已保存", "三个尺寸均已生成居中裁剪背景。可调整文字颜色和暗色遮罩，然后预览组件。");
+      }
+      if (action === 2) {
+        const color = await choose("背景文字颜色", ["白色（适合深色壁纸）", "深色（适合浅色壁纸）"]);
+        if (color >= 0) { bg.text = ["light", "dark"][color]; write("settings", settings); }
+      }
+      if (action === 3) {
+        const input = await fields("图片暗色遮罩", [["0—80，百分比", String(Math.round(bg.dim * 100))]], "仅用于相册图片。透明背景保持原图，不叠加遮罩。");
+        if (!input) continue;
+        L.assert(input[0] !== "" && Number.isFinite(Number(input[0])) && Number(input[0]) >= 0 && Number(input[0]) <= 80, "请填写 0—80 的数字");
+        bg.dim = Number(input[0]) / 100;
+        if (bg.photo) {
+          const image = fm.readImage(backgroundPath(bg.photo)), name = `photo-${uuid()}.png`;
+          bg.photo = name;
+          saveBackground(settings, [[name, image], ...["small", "medium", "large"].map(family => [photoFile(name, family), photoInfoImage(image, family, bg.dim)])]);
+        } else write("settings", settings);
+      }
+      if (action === 4) { bg.mode = "theme"; write("settings", settings); }
+      if (action === 5) { L.assert(Object.values(bg.transparent).some(Boolean), "请先制作至少一个尺寸的透明背景"); bg.mode = "transparent"; write("settings", settings); }
+      if (action === 6) { L.assert(bg.photo, "请先选择相册图片"); bg.mode = "photo"; write("settings", settings); }
+    }
   }
   function palette(theme) {
     const dynamic = (light, dark) => theme.mode === "system" ? Color.dynamic(new Color(light), new Color(dark)) : new Color(theme.mode === "dark" ? dark : light);
@@ -400,7 +476,8 @@ function createInfoSuite() {
         catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "", status: true }], maxItems: 1, warning: true }; }
       }).filter(s => !profile.hideEmpty || s.rows.length || s.warning)
         .map(s => s.rows.length ? s : { ...s, rows: [{ main: "暂无记录", detail: "", status: true }] });
-      return renderInfoDashboard({ sections, settings, family, urlFor: link, warning: settingsState.warning });
+      const background = backgroundFor(settings, family);
+      return renderInfoDashboard({ sections, settings, family, urlFor: link, warning: settingsState.warning || background.warning, backgroundImage: background.image });
     }
     const widget = new ListWidget(); widget.setPadding(10, 12, 10, 12); widget.backgroundColor = colors.background;
     widget.url = link(kind === "dashboard" ? "dashboard" : kind);
@@ -435,7 +512,7 @@ function createInfoSuite() {
   }
   async function dashboardMenu() {
     while (true) {
-      const action = await choose("信息聚合面板", ["预览聚合组件", "管理快递", "管理火车票", "管理倒计时", "选择显示模块 / 条数", "调整显示顺序", "修改组件主题", "数据备份与恢复", "日历授权与缓存", "切换预览配置（默认/紧凑）"], `当前预览配置：${activeProfile === "default" ? "默认" : "紧凑"}`);
+      const action = await choose("信息聚合面板", ["预览聚合组件", "管理快递", "管理火车票", "管理倒计时", "选择显示模块 / 条数", "调整显示顺序", "修改组件主题", "数据备份与恢复", "日历授权与缓存", "切换预览配置（默认/紧凑）", "设置组件背景（透明/图片）"], `当前预览配置：${activeProfile === "default" ? "默认" : "紧凑"}`);
       if (action < 0) return;
       await guarded(async () => {
         if (action === 0) await preview("dashboard");
@@ -446,6 +523,7 @@ function createInfoSuite() {
         if (action === 7) await backupMenu();
         if (action === 8) await calendarMenu();
         if (action === 9) { const profile = await selectProfile(); if (profile) activeProfile = profile; }
+        if (action === 10) await backgroundMenu();
       });
     }
   }

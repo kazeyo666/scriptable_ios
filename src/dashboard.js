@@ -1,12 +1,20 @@
 // Dashboard 专用呈现层：整张面板、留白和分隔线，保留原独立列表样式。
-function renderInfoDashboard({ sections, settings, family, urlFor, warning, now = new Date() }) {
+function renderInfoDashboard({ sections, settings, family, urlFor, warning, backgroundImage, now = new Date() }) {
   const L = InfoLogic, large = family === "large", small = family === "small";
   const mode = settings.theme.mode;
   const adaptive = (light, dark) => mode === "system" ? Color.dynamic(new Color(light), new Color(dark)) : new Color(mode === "dark" ? dark : light);
   const colors = { background: adaptive("#F7F6F2", "#15191D"), text: adaptive("#202A33", "#F1F3F5"),
     muted: adaptive("#67727B", "#A1ABB4"), line: adaptive("#E0E2DF", "#30373D"),
     accent: new Color(settings.theme.accent), tint: new Color(settings.theme.accent, 0.10) };
+  if (backgroundImage) {
+    const light = settings.background.text === "light";
+    colors.text = new Color(light ? "#FFFFFF" : "#17212B");
+    colors.muted = new Color(light ? "#FFFFFF" : "#17212B", 0.80);
+    colors.line = new Color(light ? "#FFFFFF" : "#17212B", 0.20);
+    colors.accent = colors.text; colors.tint = colors.line;
+  }
   const widget = new ListWidget(); widget.backgroundColor = colors.background;
+  if (backgroundImage) widget.backgroundImage = backgroundImage;
   widget.setPadding(large ? 16 : 12, large ? 18 : 12, large ? 16 : 12, large ? 18 : 12);
   widget.url = urlFor("dashboard"); widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
   const text = (stack, value, size, color = colors.text, weight = "regular") => {
@@ -37,7 +45,7 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, now 
     text(badge, `${parcelCount} 件待取`, 10, colors.accent, "medium");
   }
   widget.addSpacer(large ? 10 : 8);
-  if (warning) { text(widget, "配置异常 · 使用有效快照", 9, colors.muted); widget.addSpacer(3); }
+  if (warning) { text(widget, warning, 9, colors.muted); widget.addSpacer(3); }
   if (!sections.length) {
     widget.addSpacer(); text(widget, "暂无信息", large ? 22 : 17, colors.text, "medium");
     widget.addSpacer(5); text(widget, "点按添加快递、行程或重要日期", small ? 9 : 11, colors.muted);
