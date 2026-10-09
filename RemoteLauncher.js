@@ -3,7 +3,7 @@
 
 // 桌面组件参数填写脚本名，例如 hello；留空默认运行 hello。
 const OWNER = "kazeyo666";
-const REPO = "scriptable";
+const REPO = "scriptable_ios";
 const BRANCH = "main";
 const name = String(args.widgetParameter || "hello").trim().replace(/\.js$/, "");
 if (!/^[a-zA-Z0-9_-]+$/.test(name)) {

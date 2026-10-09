@@ -1,4 +1,4 @@
-# scriptable
+# scriptable_ios
 
 存放 iOS [Scriptable](https://scriptable.app/) 脚本，通过 GitHub Raw 远程加载。
 
@@ -10,13 +10,13 @@
 
 ## 发布到 GitHub
 
-本地仓库已初始化，默认分支为 `main`，预设远程地址为 `git@github.com:kazeyo666/scriptable.git`。GitHub 上的仓库需要另行创建；为方便无登录远程加载，建议设为公开。
+本地仓库已初始化，默认分支为 `main`，预设远程地址为 `git@github.com:kazeyo666/scriptable_ios.git`。GitHub 上的仓库需要另行创建；为方便无登录远程加载，建议设为公开。
 
 如果 GitHub 上尚未创建仓库，登录 GitHub CLI 后，在本目录执行：
 
 ```bash
 gh auth login
-gh repo create kazeyo666/scriptable --public --source=. --push
+gh repo create kazeyo666/scriptable_ios --public --source=. --push
 ```
 
 如果已经在网页创建了空仓库，直接执行：
@@ -37,7 +37,7 @@ git push -u origin main
 示例 Raw 地址（发布后才可用）：
 
 ```text
-https://raw.githubusercontent.com/kazeyo666/scriptable/main/scripts/hello.js
+https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/hello.js
 ```
 
 入口使用 Scriptable 的 [Request](https://docs.scriptable.app/request/) 下载脚本，并通过 [FileManager](https://docs.scriptable.app/filemanager/) 保存本地缓存。只有首次下载成功后，才能离线使用缓存。
