@@ -5,7 +5,7 @@
 ## 目录
 
 - `scripts/`：远程脚本，每个脚本一个 `.js` 文件。
-- `RemoteLauncher.js`：复制到 Scriptable 的本地入口，每次运行同步全部远程脚本，下载失败时使用缓存。
+- `RemoteLauncher.js`：复制到 Scriptable 的入口，每次运行同步全部远程脚本并安装到脚本列表，下载失败时使用缓存。
 - `scripts/hello.js`：用于检查远程加载的小组件示例。
 - `scripts/countdown.js`：通过菜单管理多个倒计时，事件保存在设备本地。
 
@@ -30,8 +30,8 @@ git push -u origin main
 
 ## 在 Scriptable 中使用
 
-1. 在 Scriptable 中新建脚本，把 `RemoteLauncher.js` 的内容粘贴进去并保存。
-2. 运行入口脚本，会同步 `scripts/` 下全部 `.js`，然后弹出脚本选择菜单。选 `countdown` 打开倒计时管理菜单，选 `hello` 预览示例。
+1. 在 Scriptable 中新建脚本，把 `RemoteLauncher.js` 的内容粘贴进去，命名为 `RemoteLauncher` 并保存。
+2. 运行入口脚本，会同步 `scripts/` 下全部 `.js` 并安装到 Scriptable 脚本列表。同步完成后选「返回列表」，即可看到 `countdown`、`hello`；也可以选「选择脚本运行」，选 `countdown` 打开倒计时管理菜单，选 `hello` 预览示例。
 3. 添加桌面 Scriptable 小组件，选择此入口脚本，在参数里填写脚本名，例如 `hello`，不需要 `.js` 后缀。
 4. 把自己的脚本放入 `scripts/`，提交并推送到 GitHub 后，下次入口运行会下载新版本。桌面小组件的实际刷新时间由 iOS 调度。
 
@@ -44,6 +44,10 @@ https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/scripts/hello.js
 入口通过 GitHub 目录 API 发现 `scripts/` 下的脚本，使用 Scriptable 的 [Request](https://docs.scriptable.app/request/) 分批下载全部脚本，并通过 [FileManager](https://docs.scriptable.app/filemanager/) 保存本地缓存。App 和桌面组件每次运行都会同步全部脚本，再执行选中的脚本。只有首次下载成功后，才能离线使用缓存。目录读取失败时按已有缓存和默认/指定脚本尝试下载；个别脚本下载或语法检查失败时保留旧缓存，其他脚本仍可更新。
 
 同步范围为 `scripts/` 目录直接包含的 `.js` 文件，文件名只支持字母、数字、下划线和连字符。以后新增脚本并推送到 GitHub 后，入口下次成功读取目录即可自动发现。脚本缓存不自动删除。手机中的入口本身仍需手动替换；远程脚本不需要逐个复制到 App。
+
+同步后的完整 `.js` 保存到入口所在存储空间的脚本文档目录：入口在 iCloud 时保存到 iCloud，入口在本地时保存到本地。Scriptable 的脚本存放在文档目录，参见 [FileManager 官方文档](https://docs.scriptable.app/filemanager/#-documentsdirectory)。每次运行入口会覆盖同名脚本，代码修改请在 GitHub 上完成；倒计时事件 JSON 不受影响。若远程脚本与当前入口文件同名，会跳过安装并提示改名，避免覆盖入口。
+
+安装后可直接点击列表中的 `countdown` 管理事件，也可让桌面小组件直接选择 `countdown`，Parameter 只填事件名称，例如 `生日`。直接运行已安装的脚本不会触发远程同步，需要更新时运行 `RemoteLauncher`；桌面组件若继续使用入口和 `countdown|生日` 参数，则每次运行仍会同步全部脚本。
 
 远程脚本按独立脚本执行，支持顶层 `await`；需要复用本地模块时，可使用绝对路径。只加载你信任的脚本，公开仓库不要提交 Token、密码或私人配置，敏感值可放在设备的 Keychain 中。
 

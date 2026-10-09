@@ -1,7 +1,8 @@
 // Variables used by Scriptable.
 // icon-color: blue; icon-glyph: download;
 
-// 每次运行同步 scripts/ 下全部 .js；App 内选择脚本，小组件用参数选择。
+// 每次运行同步 scripts/ 下全部 .js，并安装到 Scriptable 脚本列表。
+// App 内选择脚本，小组件用参数选择。
 // 参数格式：脚本名|脚本参数，例如 countdown|生日。
 const OWNER = "kazeyo666";
 const REPO = "scriptable_ios";
@@ -17,6 +18,9 @@ if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
 }
 
 const fm = FileManager.local();
+// 跟随入口的存储位置：启用 iCloud 时写入 iCloud，否则写入本地脚本目录。
+const scriptFiles = fm.isFileStoredIniCloud(module.filename) ? FileManager.iCloud() : fm;
+const scriptsDir = scriptFiles.documentsDirectory();
 const cacheDir = fm.joinPath(fm.documentsDirectory(), "scriptable-remote-cache");
 fm.createDirectory(cacheDir, true);
 const cachePrefix = `${OWNER}-${REPO}-${BRANCH}-`;
@@ -68,38 +72,79 @@ for (let offset = 0; offset < syncNames.length; offset += 3) {
   });
 }
 
-let cancelled = false;
-if (config.runsInApp && !parameter) {
-  const available = syncNames.filter(script => fm.fileExists(cachePathFor(script)));
-  available.sort((a, b) => a === DEFAULT_SCRIPT ? -1 : b === DEFAULT_SCRIPT ? 1 : a.localeCompare(b));
-  if (available.length) {
-    const menu = new Alert();
-    menu.title = "选择脚本";
-    const updated = syncNames.length - failures.size;
-    menu.message = `已更新 ${updated} 个脚本。${failures.size ? `\n${failures.size} 个更新失败，有缓存的脚本仍可运行。` : ""}`;
-    available.forEach(script => menu.addAction(script + (failures.has(script) ? "（使用缓存）" : "")));
-    menu.addCancelAction("取消");
-    const choice = await menu.presentSheet();
-    if (choice < 0) cancelled = true;
-    else name = available[choice];
+// 将缓存中的完整脚本安装到文档目录，作为可以单独运行的 .js 文件。
+// 离线或个别下载失败时，仍能安装已存在的缓存。
+const installFailures = new Map();
+let installed = 0;
+for (const script of syncNames) {
+  const cachePath = cachePathFor(script);
+  if (!fm.fileExists(cachePath)) continue;
+  const scriptPath = scriptFiles.joinPath(scriptsDir, `${script}.js`);
+  try {
+    if (scriptPath === module.filename) {
+      throw new Error("与当前入口文件同名，请先将入口改名为 RemoteLauncher 再同步。");
+    }
+    const source = fm.readString(cachePath);
+    new AsyncFunction("args", source);
+    scriptFiles.writeString(scriptPath, source);
+    installed++;
+  } catch (error) {
+    installFailures.set(script, String(error.message || error));
+    console.warn(`${script} 安装失败：${installFailures.get(script)}`);
   }
 }
 
-if (cancelled) {
-  Script.complete();
-} else {
-  const cachePath = cachePathFor(name);
-  if (!fm.fileExists(cachePath)) {
-    throw new Error(`无法加载 ${name}.js：${failures.get(name) || "没有本地缓存"}\n下载地址：${rawBase}${name}.js`);
+if (config.runsInApp) {
+  const report = new Alert();
+  report.title = "脚本同步完成";
+  report.message = `已将 ${installed} 个脚本保存到 Scriptable 脚本目录。返回脚本列表可直接打开。`
+    + (failures.size ? `\n${failures.size} 个下载失败，有缓存的使用旧版本。` : "")
+    + (installFailures.size ? "\n安装失败：\n" + [...installFailures].map(([script, reason]) => `${script}：${reason}`).join("\n") : "");
+  report.addAction("选择脚本运行");
+  report.addCancelAction("返回列表");
+  if (await report.presentAlert() < 0) {
+    Script.complete();
+  } else {
+    await selectAndRun();
   }
-  if (failures.has(name)) console.warn(`${name} 使用上次下载的脚本缓存。`);
-  const run = new AsyncFunction("args", fm.readString(cachePath));
-  // 代理其余原生参数，单独传递脚本参数，不修改 Scriptable 的全局 args。
-  const scriptArgs = new Proxy(args, {
-    get(target, key) {
-      return key === "widgetParameter" ? scriptParameter : target[key];
-    },
-  });
-  await run(scriptArgs);
+} else {
+  await selectAndRun();
+}
+
+async function selectAndRun() {
+  let cancelled = false;
+  if (config.runsInApp && !parameter) {
+    const available = syncNames.filter(script => fm.fileExists(cachePathFor(script)));
+    available.sort((a, b) => a === DEFAULT_SCRIPT ? -1 : b === DEFAULT_SCRIPT ? 1 : a.localeCompare(b));
+    if (available.length) {
+      const menu = new Alert();
+      menu.title = "选择脚本";
+      const updated = syncNames.length - failures.size;
+      menu.message = `已更新 ${updated} 个脚本。${failures.size ? `\n${failures.size} 个更新失败，有缓存的脚本仍可运行。` : ""}`;
+      available.forEach(script => menu.addAction(script + (failures.has(script) ? "（使用缓存）" : "")));
+      menu.addCancelAction("取消");
+      const choice = await menu.presentSheet();
+      if (choice < 0) cancelled = true;
+      else name = available[choice];
+    }
+  }
+
+  if (cancelled) {
+    Script.complete();
+  } else {
+    const cachePath = cachePathFor(name);
+    if (!fm.fileExists(cachePath)) {
+      throw new Error(`无法加载 ${name}.js：${failures.get(name) || "没有本地缓存"}\n下载地址：${rawBase}${name}.js`);
+    }
+    if (failures.has(name)) console.warn(`${name} 使用上次下载的脚本缓存。`);
+    const run = new AsyncFunction("args", fm.readString(cachePath));
+    // 代理其余原生参数，单独传递脚本参数，不修改 Scriptable 的全局 args。
+    const scriptArgs = new Proxy(args, {
+      get(target, key) {
+        return key === "widgetParameter" ? scriptParameter : target[key];
+      },
+    });
+    await run(scriptArgs);
+  }
 }
 
