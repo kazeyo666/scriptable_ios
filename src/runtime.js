@@ -370,6 +370,18 @@ function createInfoSuite() {
   async function confirmEmptyWallpaper() {
     return await choose("确认空白壁纸截图", ["确认：截图中没有组件和 App 图标"], "用于背景的图必须是桌面编辑模式最右侧空白页的完整截图。\n如果图里有日期、日程、倒计时、Scriptable 组件或 App 图标，这些内容会被画进背景，与新文字叠加产生重影。\n如果选错了，请点返回重新选图；程序不会自动擦除截图中的文字。") === 0;
   }
+  async function useMeasuredIphone17Background() {
+    await notify("选择你提供的第二张截图", "请选择同壁纸的空白桌面完整截图。已为你测量大号顶部的位置，无需紫色校准、拖框或填写坐标。仅匹配你这套 iPhone 17 显示布局，附件压缩换算可能有少量误差。");
+    let image; try { image = await Photos.fromLibrary(); } catch (_) { return; }
+    const rect = InfoWidgetGeometry.measuredIphone17Rect(image.size);
+    if (!await confirmEmptyWallpaper()) return;
+    const settings = editable("settings"), bg = settings.background, name = `transparent-${uuid()}.png`;
+    bg.mode = "transparent"; bg.transparent.large = name;
+    bg.calibration.large = { width: image.size.width, height: image.size.height, position: 0, rect };
+    saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
+    await notify("已按提供截图制作背景", "大号顶部背景已保存并校验，即将预览。看完点左上角 Close 返回。桌面长按组件→编辑小组件→Script 选择 dashboard，Parameter 留空或 default。使用 RemoteLauncher 时参数填 dashboard|default。请回桌面检查接缝；不要保留 calibrate 参数。");
+    await presentPreview("dashboard", "large");
+  }
   async function calibrationMenu() {
     const action = await choose("本机自动校准透明背景", ["查看校准步骤", "导入校准截图并自动裁剪"], "识别紫色组件的真实边界，适用于新机型、新 iOS 和显示缩放。全程本机处理，不需要手动裁剪。");
     if (action < 0) return;
@@ -398,8 +410,8 @@ function createInfoSuite() {
     while (true) {
       const settings = editable("settings"), bg = settings.background;
       const savedSizes = ["large", "medium", "small"].map((family, i) => `${["大号", "中号", "小号"][i]}：${bg.transparent[family] ? "已保存" : "未设置"}`).join("、");
-      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览", "本机自动校准（新系统 / 未对齐）"],
-        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。新系统或未对齐请使用本机自动校准，不直接套旧机型表。默认/紧凑共用背景。`);
+      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览", "本机自动校准（新系统 / 未对齐）", "使用已测量布局（iPhone 17 大号顶部）"],
+        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。iPhone 17 可选已测量布局，无需紫色校准。其他未对齐布局使用本机自动校准。默认/紧凑共用背景。`);
       if (action < 0) return;
       if (action === 0) {
         let allowLegacy = parseInt(Device.systemVersion?.() || "0", 10) < 26;
@@ -468,6 +480,7 @@ function createInfoSuite() {
         await presentPreview("dashboard", family);
       }
       if (action === 8) await calibrationMenu();
+      if (action === 9) await useMeasuredIphone17Background();
     }
   }
   function palette(theme) {

@@ -121,3 +121,20 @@ test("远程更新保留背景 PNG 与配置，恢复旧 JSON 备份仍兼容", 
   const backup = plain(h.suite.backupObject()); delete backup.data.settings.background;
   const restored = harness(); restored.suite.restoreBackup(backup); assert.equal(restored.suite.read("settings").data.background.mode, "theme");
 });
+test("用户提供截图的测量布局按两个轴换算边界，不套旧同分辨率机型", () => {
+  const G=harness().geometry;
+  assert.deepEqual(plain(G.measuredIphone17Rect({width:588,height:1280})),{x:38,y:132,width:512,height:534});
+  assert.deepEqual(plain(G.measuredIphone17Rect({width:1206,height:2622})),{x:78,y:270,width:1050,height:1094});
+  assert.throws(()=>G.measuredIphone17Rect({width:1170,height:2532}),/仅匹配/);
+});
+test("已测量布局入口无需用户校准，保存大号背景并保留私人数据；尺寸不符拒绝", async () => {
+  const privateData=JSON.stringify({version:1,items:[parcel()]});
+  const h=harness({app:true,systemVersion:"27.0",image:{size:{width:1206,height:2622}},files:{[dataPath("parcels")]:privateData},responses:[10,9,0,0,0,-1,-1]});
+  await h.suite.run("dashboard");
+  const bg=h.suite.read("settings").data.background;
+  assert.equal(bg.mode,"transparent");assert.deepEqual(plain(bg.calibration.large.rect),{x:78,y:270,width:1050,height:1094});
+  assert.equal(h.webviews.length,0);assert.ok(h.previews[0].widget.backgroundImage);assert.equal(h.previews[0].family,"large");
+  assert.equal(h.files.get(dataPath("parcels")),privateData);
+  const wrong=harness({app:true,systemVersion:"27.0",responses:[10,9,0,0,-1]});await wrong.suite.run("dashboard");
+  assert.equal(wrong.suite.read("settings").data.background.mode,"theme");assert.equal(wrong.previews.length,0);
+});

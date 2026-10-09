@@ -307,5 +307,17 @@ const InfoWidgetGeometry = (() => {
     const row=family === "small" ? Math.floor(position/2) : position;
     return InfoLogic.cropRect({x:family === "small" && position%2 ? grid.right : grid.left, y:grid[["top","middle","bottom"][row]], width:family === "small" ? grid.small : grid.medium, height:family === "large" ? grid.large : grid.small},size);
   }
-  return {options,rect};
+  // 本次用户两张同壁纸截图中，大号顶部矩形的可见边界。
+  // 这是该用户布局的截图测量，不是 iPhone 17/iOS 27 的通用官方尺寸。
+  // 两张附件均为 588×1280；原分辨率按轴独立换算，允许有重采样误差。
+  function measuredIphone17Rect(size) {
+    InfoLogic.assert(size && ((size.width === 1206 && size.height === 2622) || (size.width === 588 && size.height === 1280)),
+      "此已测量布局仅匹配 iPhone 17 的 1206×2622 完整截图，或你提供的 588×1280 截图。请选择同一显示设置的空白壁纸图。");
+    const reference = { x: 38, y: 132, width: 512, height: 534 };
+    const x = Math.round(reference.x * size.width / 588), y = Math.round(reference.y * size.height / 1280);
+    const right = Math.round((reference.x + reference.width) * size.width / 588);
+    const bottom = Math.round((reference.y + reference.height) * size.height / 1280);
+    return InfoLogic.cropRect({ x, y, width: right - x, height: bottom - y }, size);
+  }
+  return {options,rect,measuredIphone17Rect};
 })();
