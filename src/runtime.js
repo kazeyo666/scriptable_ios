@@ -13,6 +13,7 @@ function createInfoSuite() {
   const nowISO = () => new Date().toISOString();
   let activeProfile = "default";
   let runningKind = "dashboard";
+  let appPreviewFamily = "large";
 
   function read(key) {
     const path = pathFor(key);
@@ -349,7 +350,13 @@ function createInfoSuite() {
     const created = [];
     try {
       for (const [name, image] of images) { const path = backgroundPath(name); created.push(path); fm.writeImage(path, image); }
+      for (const [name, image] of images) {
+        const saved = fm.readImage(backgroundPath(name));
+        L.assert(saved && saved.size.width === image.size.width && saved.size.height === image.size.height, "背景图片保存校验失败，请重试");
+      }
       write("settings", settings);
+      const savedSettings = L.validate("settings", JSON.parse(fm.readString(pathFor("settings"))));
+      L.assert(JSON.stringify(savedSettings.background) === JSON.stringify(L.validateBackground(settings.background)), "背景配置保存校验失败，请重试");
     } catch (error) {
       // 配置若已经写入（例如最后快照失败），保留其引用的图片。
       let committed = false;
@@ -361,23 +368,34 @@ function createInfoSuite() {
   async function backgroundMenu() {
     while (true) {
       const settings = editable("settings"), bg = settings.background;
-      const action = await choose("组件背景", ["制作透明背景（桌面截图）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片"],
-        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。默认/紧凑面板共用背景。透明效果需按尺寸裁剪桌面壁纸；不支持真正透视桌面。`);
+      const savedSizes = ["large", "medium", "small"].map((family, i) => `${["大号", "中号", "小号"][i]}：${bg.transparent[family] ? "已保存" : "未设置"}`).join("、");
+      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览"],
+        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。按内置组件尺寸自动裁剪，无需手动选框。默认/紧凑共用背景。`);
       if (action < 0) return;
       if (action === 0) {
-        const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。选框需与最终组件边界对齐；换位置或壁纸后需重做。负一屏请使用图片背景。");
+        const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。使用本机完整截图，不要预先裁剪。按内置尺寸自动处理；换位置或壁纸后需重做。负一屏请使用图片背景。");
         if (proceed < 0) continue;
         const size = await choose("透明背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
         const family = ["large", "medium", "small"][size];
         const positions = family === "small" ? ["顶部左侧", "顶部右侧", "中间左侧", "中间右侧", "底部左侧", "底部右侧"]
           : family === "large" ? ["顶部", "底部"] : ["顶部", "中间", "底部"];
-        const position = await choose("组件在桌面的位置", positions, "位置提供初始选框，下一步可以拖动并精调。"); if (position < 0) continue;
+        const position = await choose("组件在桌面的位置", positions, "根据位置自动裁剪，大号底部从中间一行开始。"); if (position < 0) continue;
         let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
-        const rect = await editInfoCrop(image, family, position); if (!rect) continue;
+        const choices = InfoWidgetGeometry.options(image.size);
+        let variant = choices[0].key;
+        if (choices.length > 1) {
+          const choice = await choose(image.size.height === 2436 ? "选择 iPhone 型号" : "桌面图标大小", choices.map(item => item.label), "请与当前桌面设置一致，组件宽高和位置会自动匹配。");
+          if (choice < 0) continue;
+          variant = choices[choice].key;
+        }
+        const rect = InfoWidgetGeometry.rect(image.size, family, position, variant);
         const name = `transparent-${uuid()}.png`;
         bg.mode = "transparent"; bg.transparent[family] = name;
         saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
-        await notify("透明背景已保存", `已保存${["大号", "中号", "小号"][size]}背景。将组件放到刚才的位置；其他尺寸需分别设置。透明背景不叠加遮罩，图片文字颜色可单独修改。`);
+        const check = backgroundFor(read("settings").data, family);
+        L.assert(check.image && !check.warning, check.warning || "背景读回失败，请重试");
+        await notify("透明背景已保存并校验", `已自动裁剪${["大号", "中号", "小号"][size]}背景，即将预览。将组件放到所选位置；其他尺寸需分别设置。透明背景不叠加遮罩。`);
+        await presentPreview("dashboard", family);
       }
       if (action === 1) {
         let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
@@ -404,6 +422,12 @@ function createInfoSuite() {
       if (action === 4) { bg.mode = "theme"; write("settings", settings); }
       if (action === 5) { L.assert(Object.values(bg.transparent).some(Boolean), "请先制作至少一个尺寸的透明背景"); bg.mode = "transparent"; write("settings", settings); }
       if (action === 6) { L.assert(bg.photo, "请先选择相册图片"); bg.mode = "photo"; write("settings", settings); }
+      if (action === 7) {
+        const size = await choose("检查背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
+        const family = ["large", "medium", "small"][size], state = backgroundFor(settings, family);
+        await notify("背景检查", state.warning || (state.image ? `当前${["大号", "中号", "小号"][size]}背景可读取，图片尺寸 ${state.image.size.width}×${state.image.size.height}。即将预览。` : "当前使用主题纯色背景。请先选择制作透明背景或使用已保存的透明背景。"));
+        await presentPreview("dashboard", family);
+      }
     }
   }
   function palette(theme) {
@@ -507,7 +531,12 @@ function createInfoSuite() {
   }
   async function preview(kind) {
     const size = await choose("预览尺寸", ["大号", "中号", "小号"]); if (size < 0) return;
-    const family = ["large", "medium", "small"][size], widget = render(kind, family);
+    await presentPreview(kind, ["large", "medium", "small"][size]);
+  }
+  async function presentPreview(kind, family) {
+    appPreviewFamily = family;
+    const widget = render(kind, family);
+    Script.setWidget(widget);
     await widget[{ large: "presentLarge", medium: "presentMedium", small: "presentSmall" }[family]]();
   }
   async function dashboardMenu() {
@@ -567,7 +596,7 @@ function createInfoSuite() {
         else if (target === "dashboard") { await refreshCalendar(); await dashboardMenu(); }
         else await manage(target);
       }
-      Script.setWidget(render(kind));
+      Script.setWidget(render(kind, appPreviewFamily));
     } else Script.setWidget(render(kind));
     Script.complete();
   }

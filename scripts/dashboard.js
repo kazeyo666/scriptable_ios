@@ -97,15 +97,6 @@ const InfoLogic = (() => {
     assert(rect.x >= 0 && rect.y >= 0 && rect.width > 0 && rect.height > 0 && rect.x + rect.width <= size.width && rect.y + rect.height <= size.height, "裁剪范围超出图片");
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }
-  function cropSuggestion(size, family, position = 0) {
-    assert(["small", "medium", "large"].includes(family), "组件尺寸无效");
-    const width = Math.max(1, Math.min(Math.round(size.width * (family === "small" ? 0.405 : 0.866)), size.width));
-    const height = Math.max(1, Math.min(Math.round(size.width * (family === "large" ? 0.907 : 0.405)), size.height));
-    const row = family === "small" ? Math.floor(position / 2) : position;
-    const x = Math.min(size.width - width, Math.round(size.width * (family === "small" && position % 2 ? 0.528 : 0.067)));
-    const y = Math.min(size.height - height, Math.round(size.width * (0.2 + row * 0.503)));
-    return cropRect({ x, y, width, height }, size); // 仅为起始框，用户需按桌面实际位置校准。
-  }
   function validate(key, input) {
     assert(input && typeof input === "object" && !Array.isArray(input), "数据必须是 JSON 对象");
     if (key === "countdowns") {
@@ -275,61 +266,322 @@ const InfoLogic = (() => {
   }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
     validate, empty, defaults, parcels, trains, countdowns, importItems, mergeItems, validateBackup,
-    truncate, metrics, planLayout, planDashboard, moduleIds, backgroundDefaults, validateBackground, cropRect, cropSuggestion };
+    truncate, metrics, planLayout, planDashboard, moduleIds, backgroundDefaults, validateBackground, cropRect };
 })();
 
-// 图片只在本地处理。WebView 的 DOM 仅用于 App 内裁剪界面，组件运行不创建 WebView。
-function infoCropHTML(base64, size, initial) {
-  InfoLogic.cropRect(initial, size);
-  InfoLogic.assert(typeof base64 === "string" && /^[A-Za-z0-9+/=]+$/.test(base64), "图片编码无效");
-  return `<!doctype html><html lang="zh-CN"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
-<style>
-*{box-sizing:border-box}body{margin:0;padding:18px;font:15px -apple-system,BlinkMacSystemFont,sans-serif;background:#f6f5f1;color:#25313c}
-h1{font-size:22px;margin:0 0 8px}p{font-size:13px;color:#65717c;line-height:1.6;margin:8px 0 14px}
-#stage{position:relative;margin:auto;width:100%;max-width:290px;line-height:0;overflow:hidden;border-radius:14px;background:#ddd;touch-action:none}
-img{display:block;width:100%;height:auto;pointer-events:none}#frame{position:absolute;border:2px solid white;border-radius:12px;box-shadow:0 0 0 1000px #0006;touch-action:none;cursor:move}
-#handle{position:absolute;right:-10px;bottom:-10px;width:30px;height:30px;border:3px solid white;border-radius:50%;background:#007aff;touch-action:none}
-.fields{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}label{font-size:12px;color:#65717c}input{width:100%;margin-top:5px;padding:9px 3px;border:1px solid #d6dce1;border-radius:8px;background:white;font-size:14px;text-align:center}
-button{width:100%;border:0;border-radius:12px;padding:14px;background:#007aff;color:white;font-size:16px;font-weight:600;margin:14px 0 0}
-#message{min-height:38px}@media(prefers-color-scheme:dark){body{background:#161a1e;color:#f1f3f5}p,label{color:#a9b2bc}input{background:#23292f;color:white;border-color:#3a424a}}
-</style></head><body><h1>对齐桌面背景</h1>
-<p>拖动白框到组件位置，拖动右下角蓝点调整尺寸。初始框仅供参考，可输入像素坐标精调。按实际组件边界校准后确认。</p>
-<div id="stage"><img id="image" alt="所选桌面截图" src="data:image/png;base64,${base64}"><div id="frame"><div id="handle"></div></div></div>
-<div class="fields"><label>左侧 X<input id="x" type="number" inputmode="numeric"></label><label>顶部 Y<input id="y" type="number" inputmode="numeric"></label><label>宽度<input id="width" type="number" inputmode="numeric"></label><label>高度<input id="height" type="number" inputmode="numeric"></label></div>
-<button id="save">确认裁剪范围</button><p id="message">确认后，点顶部的完成按钮返回并保存。直接关闭则取消。</p>
-<script>
-const imageSize=${JSON.stringify({ width: size.width, height: size.height })};
-let box=${JSON.stringify(initial)}, drag=null; window.cropResult=null;
-const stage=document.getElementById('stage'), frame=document.getElementById('frame'), handle=document.getElementById('handle');
-const message=document.getElementById('message'), save=document.getElementById('save');
-const keys=['x','y','width','height'], inputs=Object.fromEntries(keys.map(key=>[key,document.getElementById(key)]));
-const clamp=(v,min,max)=>Math.max(min,Math.min(max,Math.round(v)));
-function invalidate(){window.cropResult=null;frame.style.borderColor='white';save.textContent='确认裁剪范围';message.textContent='确认后，点顶部的完成按钮返回并保存。直接关闭则取消。'}
-function draw(){frame.style.left=box.x/imageSize.width*100+'%';frame.style.top=box.y/imageSize.height*100+'%';frame.style.width=box.width/imageSize.width*100+'%';frame.style.height=box.height/imageSize.height*100+'%';keys.forEach(key=>inputs[key].value=box[key]);}
-frame.addEventListener('pointerdown',event=>{event.preventDefault();drag={resize:event.target===handle,x:event.clientX,y:event.clientY,box:{...box}};frame.setPointerCapture(event.pointerId);invalidate();});
-frame.addEventListener('pointermove',event=>{if(!drag)return;const scale=imageSize.width/stage.getBoundingClientRect().width,dx=(event.clientX-drag.x)*scale,dy=(event.clientY-drag.y)*scale;
-if(drag.resize){box.width=clamp(drag.box.width+dx,1,imageSize.width-box.x);box.height=clamp(drag.box.height+dy,1,imageSize.height-box.y);}
-else{box.x=clamp(drag.box.x+dx,0,imageSize.width-box.width);box.y=clamp(drag.box.y+dy,0,imageSize.height-box.height);}draw();});
-for(const event of ['pointerup','pointercancel','lostpointercapture'])frame.addEventListener(event,()=>drag=null);
-keys.forEach(key=>inputs[key].addEventListener('change',()=>{const value=Number(inputs[key].value);if(!Number.isFinite(value)){draw();return;}
-const limits={x:[0,imageSize.width-box.width],y:[0,imageSize.height-box.height],width:[1,imageSize.width-box.x],height:[1,imageSize.height-box.y]};box[key]=clamp(value,...limits[key]);invalidate();draw();}));
-save.addEventListener('click',()=>{window.cropResult={...box};frame.style.borderColor='#34c759';save.textContent='已确认';message.textContent='裁剪范围已确认。请点顶部的完成按钮返回，背景会保存到本机。';});draw();
-</script></body></html>`;
-}
+// 桌面组件像素测量改编自 mzeryck/Widget-Blur，仅复用测量表，未引入模糊算法。
+// https://github.com/mzeryck/Widget-Blur/blob/main/widget-blur.js
+/*
+MIT License
 
-async function editInfoCrop(image, family, position) {
-  InfoLogic.assert(config.runsInApp, "请在 Scriptable App 内设置背景");
-  const initial = InfoLogic.cropSuggestion(image.size, family, position);
-  const view = new WebView();
-  view.shouldAllowRequest = request => String(request.url || "").startsWith("data:") || request.url === "about:blank";
-  await view.loadHTML(infoCropHTML(Data.fromPNG(image).toBase64String(), image.size, initial));
-  await view.present(false);
-  const result = await view.evaluateJavaScript("window.cropResult", false);
-  return result ? InfoLogic.cropRect(result, image.size) : null;
-}
+Copyright (c) 2022 Maxwell Zeryck
 
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+const InfoWidgetGeometry = (() => {
+  const devices = {
+  "1136": {
+    "width": 640,
+    "layout": {
+      "small": 282,
+      "medium": 584,
+      "large": 622,
+      "left": 30,
+      "right": 332,
+      "top": 59,
+      "middle": 399,
+      "bottom": 399
+    }
+  },
+  "1334": {
+    "width": 750,
+    "layout": {
+      "text": {
+        "small": 296,
+        "medium": 642,
+        "large": 648,
+        "left": 54,
+        "right": 400,
+        "top": 60,
+        "middle": 412,
+        "bottom": 764
+      },
+      "notext": {
+        "small": 309,
+        "medium": 667,
+        "large": 667,
+        "left": 41,
+        "right": 399,
+        "top": 67,
+        "middle": 425,
+        "bottom": 783
+      }
+    }
+  },
+  "1624": {
+    "width": 750,
+    "layout": {
+      "small": 310,
+      "medium": 658,
+      "large": 690,
+      "left": 46,
+      "right": 394,
+      "top": 142,
+      "middle": 522,
+      "bottom": 902
+    }
+  },
+  "1792": {
+    "width": 828,
+    "layout": {
+      "small": 338,
+      "medium": 720,
+      "large": 758,
+      "left": 55,
+      "right": 437,
+      "top": 159,
+      "middle": 579,
+      "bottom": 999
+    }
+  },
+  "2001": {
+    "width": 1125,
+    "layout": {
+      "small": 444,
+      "medium": 963,
+      "large": 972,
+      "left": 81,
+      "right": 600,
+      "top": 90,
+      "middle": 618,
+      "bottom": 1146
+    }
+  },
+  "2079": {
+    "width": 960,
+    "layout": {
+      "small": 423,
+      "medium": 875,
+      "large": 933,
+      "left": 42,
+      "right": 494,
+      "top": 186,
+      "middle": 696,
+      "bottom": 1206
+    }
+  },
+  "2208": {
+    "width": 1242,
+    "layout": {
+      "small": 471,
+      "medium": 1044,
+      "large": 1071,
+      "left": 99,
+      "right": 672,
+      "top": 114,
+      "middle": 696,
+      "bottom": 1278
+    }
+  },
+  "2436": {
+    "width": 1125,
+    "layout": {
+      "x": {
+        "small": 465,
+        "medium": 987,
+        "large": 1035,
+        "left": 69,
+        "right": 591,
+        "top": 213,
+        "middle": 783,
+        "bottom": 1353
+      },
+      "mini": {
+        "small": 465,
+        "medium": 987,
+        "large": 1035,
+        "left": 69,
+        "right": 591,
+        "top": 231,
+        "middle": 801,
+        "bottom": 1371
+      }
+    }
+  },
+  "2532": {
+    "width": 1170,
+    "layout": {
+      "small": 474,
+      "medium": 1014,
+      "large": 1062,
+      "left": 78,
+      "right": 618,
+      "top": 231,
+      "middle": 819,
+      "bottom": 1407
+    }
+  },
+  "2556": {
+    "width": 1179,
+    "layout": {
+      "text": {
+        "small": 474,
+        "medium": 1017,
+        "large": 1062,
+        "left": 81,
+        "right": 624,
+        "top": 240,
+        "middle": 828,
+        "bottom": 1416
+      },
+      "notext": {
+        "small": 495,
+        "medium": 1047,
+        "large": 1047,
+        "left": 66,
+        "right": 618,
+        "top": 243,
+        "middle": 795,
+        "bottom": 1347
+      }
+    }
+  },
+  "2622": {
+    "width": 1206,
+    "layout": {
+      "text": {
+        "small": 486,
+        "medium": 1032,
+        "large": 1098,
+        "left": 87,
+        "right": 633,
+        "top": 261,
+        "middle": 872,
+        "bottom": 1485
+      },
+      "notext": {
+        "small": 495,
+        "medium": 1037,
+        "large": 1035,
+        "left": 84,
+        "right": 626,
+        "top": 270,
+        "middle": 810,
+        "bottom": 1350
+      }
+    }
+  },
+  "2688": {
+    "width": 1242,
+    "layout": {
+      "small": 507,
+      "medium": 1080,
+      "large": 1137,
+      "left": 81,
+      "right": 654,
+      "top": 228,
+      "middle": 858,
+      "bottom": 1488
+    }
+  },
+  "2778": {
+    "width": 1284,
+    "layout": {
+      "small": 510,
+      "medium": 1092,
+      "large": 1146,
+      "left": 96,
+      "right": 678,
+      "top": 246,
+      "middle": 882,
+      "bottom": 1518
+    }
+  },
+  "2796": {
+    "width": 1290,
+    "layout": {
+      "text": {
+        "small": 510,
+        "medium": 1092,
+        "large": 1146,
+        "left": 98,
+        "right": 681,
+        "top": 252,
+        "middle": 888,
+        "bottom": 1524
+      },
+      "notext": {
+        "small": 530,
+        "medium": 1139,
+        "large": 1136,
+        "left": 75,
+        "right": 684,
+        "top": 252,
+        "middle": 858,
+        "bottom": 1464
+      }
+    }
+  },
+  "2868": {
+    "width": 1320,
+    "layout": {
+      "text": {
+        "small": 510,
+        "medium": 1092,
+        "large": 1146,
+        "left": 114,
+        "right": 696,
+        "top": 276,
+        "middle": 912,
+        "bottom": 1548
+      },
+      "notext": {
+        "small": 530,
+        "medium": 1138,
+        "large": 1136,
+        "left": 91,
+        "right": 699,
+        "top": 276,
+        "middle": 882,
+        "bottom": 1488
+      }
+    }
+  }
+};
+  const labels = {text:"小图标（有名称）",notext:"大图标（无名称）",mini:"iPhone 12 / 13 mini",x:"iPhone X / XS / 11 Pro"};
+  function options(size) {
+    const device = devices[size.height];
+    InfoLogic.assert(device && device.width === size.width, `暂未适配此截图尺寸 ${size.width}×${size.height}，请使用本机完整桌面截图；不会猜测裁剪范围。`);
+    return device.layout.small ? [{key:"standard",label:"常规桌面"}] : Object.keys(device.layout).map(key=>({key,label:labels[key]}));
+  }
+  function rect(size, family, position, variant = "standard") {
+    const choices = options(size);
+    InfoLogic.assert(choices.some(item=>item.key===variant), "桌面布局选项无效");
+    InfoLogic.assert(["small","medium","large"].includes(family) && Number.isInteger(position) && position >= 0 && position < (family === "small" ? 6 : family === "medium" ? 3 : 2), "组件尺寸或位置无效");
+    const base=devices[size.height].layout, grid=variant === "standard" ? base : base[variant];
+    const row=family === "small" ? Math.floor(position/2) : position;
+    return InfoLogic.cropRect({x:family === "small" && position%2 ? grid.right : grid.left, y:grid[["top","middle","bottom"][row]], width:family === "small" ? grid.small : grid.medium, height:family === "large" ? grid.large : grid.small},size);
+  }
+  return {options,rect};
+})();
+
+// 原生图片处理：透明背景使用内置桌面尺寸表自动裁剪，不创建 WebView。
 function cropInfoImage(image, rect) {
   const box = InfoLogic.cropRect(rect, image.size), draw = new DrawContext();
   draw.respectScreenScale = false; draw.opaque = true;
@@ -494,6 +746,7 @@ function createInfoSuite() {
   const nowISO = () => new Date().toISOString();
   let activeProfile = "default";
   let runningKind = "dashboard";
+  let appPreviewFamily = "large";
 
   function read(key) {
     const path = pathFor(key);
@@ -830,7 +1083,13 @@ function createInfoSuite() {
     const created = [];
     try {
       for (const [name, image] of images) { const path = backgroundPath(name); created.push(path); fm.writeImage(path, image); }
+      for (const [name, image] of images) {
+        const saved = fm.readImage(backgroundPath(name));
+        L.assert(saved && saved.size.width === image.size.width && saved.size.height === image.size.height, "背景图片保存校验失败，请重试");
+      }
       write("settings", settings);
+      const savedSettings = L.validate("settings", JSON.parse(fm.readString(pathFor("settings"))));
+      L.assert(JSON.stringify(savedSettings.background) === JSON.stringify(L.validateBackground(settings.background)), "背景配置保存校验失败，请重试");
     } catch (error) {
       // 配置若已经写入（例如最后快照失败），保留其引用的图片。
       let committed = false;
@@ -842,23 +1101,34 @@ function createInfoSuite() {
   async function backgroundMenu() {
     while (true) {
       const settings = editable("settings"), bg = settings.background;
-      const action = await choose("组件背景", ["制作透明背景（桌面截图）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片"],
-        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。默认/紧凑面板共用背景。透明效果需按尺寸裁剪桌面壁纸；不支持真正透视桌面。`);
+      const savedSizes = ["large", "medium", "small"].map((family, i) => `${["大号", "中号", "小号"][i]}：${bg.transparent[family] ? "已保存" : "未设置"}`).join("、");
+      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览"],
+        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。按内置组件尺寸自动裁剪，无需手动选框。默认/紧凑共用背景。`);
       if (action < 0) return;
       if (action === 0) {
-        const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。选框需与最终组件边界对齐；换位置或壁纸后需重做。负一屏请使用图片背景。");
+        const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。使用本机完整截图，不要预先裁剪。按内置尺寸自动处理；换位置或壁纸后需重做。负一屏请使用图片背景。");
         if (proceed < 0) continue;
         const size = await choose("透明背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
         const family = ["large", "medium", "small"][size];
         const positions = family === "small" ? ["顶部左侧", "顶部右侧", "中间左侧", "中间右侧", "底部左侧", "底部右侧"]
           : family === "large" ? ["顶部", "底部"] : ["顶部", "中间", "底部"];
-        const position = await choose("组件在桌面的位置", positions, "位置提供初始选框，下一步可以拖动并精调。"); if (position < 0) continue;
+        const position = await choose("组件在桌面的位置", positions, "根据位置自动裁剪，大号底部从中间一行开始。"); if (position < 0) continue;
         let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
-        const rect = await editInfoCrop(image, family, position); if (!rect) continue;
+        const choices = InfoWidgetGeometry.options(image.size);
+        let variant = choices[0].key;
+        if (choices.length > 1) {
+          const choice = await choose(image.size.height === 2436 ? "选择 iPhone 型号" : "桌面图标大小", choices.map(item => item.label), "请与当前桌面设置一致，组件宽高和位置会自动匹配。");
+          if (choice < 0) continue;
+          variant = choices[choice].key;
+        }
+        const rect = InfoWidgetGeometry.rect(image.size, family, position, variant);
         const name = `transparent-${uuid()}.png`;
         bg.mode = "transparent"; bg.transparent[family] = name;
         saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
-        await notify("透明背景已保存", `已保存${["大号", "中号", "小号"][size]}背景。将组件放到刚才的位置；其他尺寸需分别设置。透明背景不叠加遮罩，图片文字颜色可单独修改。`);
+        const check = backgroundFor(read("settings").data, family);
+        L.assert(check.image && !check.warning, check.warning || "背景读回失败，请重试");
+        await notify("透明背景已保存并校验", `已自动裁剪${["大号", "中号", "小号"][size]}背景，即将预览。将组件放到所选位置；其他尺寸需分别设置。透明背景不叠加遮罩。`);
+        await presentPreview("dashboard", family);
       }
       if (action === 1) {
         let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
@@ -885,6 +1155,12 @@ function createInfoSuite() {
       if (action === 4) { bg.mode = "theme"; write("settings", settings); }
       if (action === 5) { L.assert(Object.values(bg.transparent).some(Boolean), "请先制作至少一个尺寸的透明背景"); bg.mode = "transparent"; write("settings", settings); }
       if (action === 6) { L.assert(bg.photo, "请先选择相册图片"); bg.mode = "photo"; write("settings", settings); }
+      if (action === 7) {
+        const size = await choose("检查背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
+        const family = ["large", "medium", "small"][size], state = backgroundFor(settings, family);
+        await notify("背景检查", state.warning || (state.image ? `当前${["大号", "中号", "小号"][size]}背景可读取，图片尺寸 ${state.image.size.width}×${state.image.size.height}。即将预览。` : "当前使用主题纯色背景。请先选择制作透明背景或使用已保存的透明背景。"));
+        await presentPreview("dashboard", family);
+      }
     }
   }
   function palette(theme) {
@@ -988,7 +1264,12 @@ function createInfoSuite() {
   }
   async function preview(kind) {
     const size = await choose("预览尺寸", ["大号", "中号", "小号"]); if (size < 0) return;
-    const family = ["large", "medium", "small"][size], widget = render(kind, family);
+    await presentPreview(kind, ["large", "medium", "small"][size]);
+  }
+  async function presentPreview(kind, family) {
+    appPreviewFamily = family;
+    const widget = render(kind, family);
+    Script.setWidget(widget);
     await widget[{ large: "presentLarge", medium: "presentMedium", small: "presentSmall" }[family]]();
   }
   async function dashboardMenu() {
@@ -1048,7 +1329,7 @@ function createInfoSuite() {
         else if (target === "dashboard") { await refreshCalendar(); await dashboardMenu(); }
         else await manage(target);
       }
-      Script.setWidget(render(kind));
+      Script.setWidget(render(kind, appPreviewFamily));
     } else Script.setWidget(render(kind));
     Script.complete();
   }

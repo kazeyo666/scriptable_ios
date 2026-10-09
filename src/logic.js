@@ -93,15 +93,6 @@ const InfoLogic = (() => {
     assert(rect.x >= 0 && rect.y >= 0 && rect.width > 0 && rect.height > 0 && rect.x + rect.width <= size.width && rect.y + rect.height <= size.height, "裁剪范围超出图片");
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }
-  function cropSuggestion(size, family, position = 0) {
-    assert(["small", "medium", "large"].includes(family), "组件尺寸无效");
-    const width = Math.max(1, Math.min(Math.round(size.width * (family === "small" ? 0.405 : 0.866)), size.width));
-    const height = Math.max(1, Math.min(Math.round(size.width * (family === "large" ? 0.907 : 0.405)), size.height));
-    const row = family === "small" ? Math.floor(position / 2) : position;
-    const x = Math.min(size.width - width, Math.round(size.width * (family === "small" && position % 2 ? 0.528 : 0.067)));
-    const y = Math.min(size.height - height, Math.round(size.width * (0.2 + row * 0.503)));
-    return cropRect({ x, y, width, height }, size); // 仅为起始框，用户需按桌面实际位置校准。
-  }
   function validate(key, input) {
     assert(input && typeof input === "object" && !Array.isArray(input), "数据必须是 JSON 对象");
     if (key === "countdowns") {
@@ -271,5 +262,5 @@ const InfoLogic = (() => {
   }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
     validate, empty, defaults, parcels, trains, countdowns, importItems, mergeItems, validateBackup,
-    truncate, metrics, planLayout, planDashboard, moduleIds, backgroundDefaults, validateBackground, cropRect, cropSuggestion };
+    truncate, metrics, planLayout, planDashboard, moduleIds, backgroundDefaults, validateBackground, cropRect };
 })();

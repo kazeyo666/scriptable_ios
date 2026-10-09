@@ -6,11 +6,12 @@ export const logicSource = readFileSync(new URL("../src/logic.js", import.meta.u
 export const runtimeSource = readFileSync(new URL("../src/runtime.js", import.meta.url), "utf8");
 export const dashboardSource = readFileSync(new URL("../src/dashboard.js", import.meta.url), "utf8");
 export const backgroundSource = readFileSync(new URL("../src/background.js", import.meta.url), "utf8");
+export const geometrySource = readFileSync(new URL("../src/widget-geometry.js", import.meta.url), "utf8");
 export const plain = value => JSON.parse(JSON.stringify(value));
 export function harness(options = {}) {
   const files = new Map(Object.entries(options.files || {}));
   const nodes = [], dialogs = [], queue = [...(options.responses || [])];
-  const requests = [], calendars = [], exported = [], webviews = [], drawings = [];
+  const requests = [], calendars = [], exported = [], webviews = [], drawings = [], previews = [];
   let rendered, complete = false, calendarReads = 0, writes = 0;
   class Stack {
     constructor() { this.children = []; nodes.push(this); }
@@ -22,7 +23,7 @@ export function harness(options = {}) {
     layoutHorizontally() { this.horizontal = true; }
     layoutVertically() { this.vertical = true; }
     centerAlignContent() {}
-    async presentSmall() {} async presentMedium() {} async presentLarge() {}
+    async presentSmall() { previews.push({ family: "small", widget: this }); } async presentMedium() { previews.push({ family: "medium", widget: this }); } async presentLarge() { previews.push({ family: "large", widget: this }); }
   }
   const manager = cloud => ({
     documentsDirectory: () => cloud ? "/icloud" : "/docs",
@@ -30,7 +31,7 @@ export function harness(options = {}) {
     fileExists: path => files.has(path), readString(path) { if (!files.has(path)) throw Error("missing file"); return files.get(path); },
     writeString(path, value) { writes++; if (options.failWrite?.(path, writes)) throw Error("disk failure"); files.set(path, value); },
     readImage(path) { if (!files.has(path) || !files.get(path)?.size || options.imageError) throw Error("invalid image"); return files.get(path); },
-    writeImage(path, image) { writes++; if (options.failWrite?.(path, writes)) throw Error("disk failure"); files.set(path, image); },
+    writeImage(path, image) { writes++; if (options.failWrite?.(path, writes)) throw Error("disk failure"); if (!options.dropImageWrite) files.set(path, image); },
     remove: path => files.delete(path), listContents: path => [...files.keys()].filter(p => p.startsWith(path + "/")).map(p => p.slice(path.length + 1)),
     isFileStoredIniCloud: path => path.startsWith("/icloud/"), async downloadFileFromiCloud() {},
   });
@@ -104,8 +105,8 @@ export function harness(options = {}) {
       }
     },
   });
-  const api = vm.runInContext(logicSource + "\n" + backgroundSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,cropHTML:infoCropHTML})", context);
-  return { ...api, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, queue, context,
+  const api = vm.runInContext(logicSource + "\n" + geometrySource + "\n" + backgroundSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,geometry:InfoWidgetGeometry})", context);
+  return { ...api, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, previews, queue, context,
     evaluate: source => vm.runInContext(`(async()=>{${source}\n})()`, context),
     get rendered() { return rendered; }, get complete() { return complete; }, get calendarReads() { return calendarReads; },
     text() { const values = []; const visit = node => { if (node.kind === "text") values.push(node.value); for (const child of node.children || []) visit(child); }; visit(rendered); return values.join("\n"); },
