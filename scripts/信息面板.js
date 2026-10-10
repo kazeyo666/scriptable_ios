@@ -787,7 +787,7 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, back
   const widget = new ListWidget(); widget.backgroundColor = colors.background;
   if (backgroundImage) widget.backgroundImage = backgroundImage;
   widget.setPadding(large ? 16 : 12, large ? 18 : 12, large ? 16 : 12, large ? 18 : 12);
-  widget.url = urlFor("dashboard"); widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
+  widget.url = urlFor(small ? "refresh" : "dashboard"); widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
   const text = (stack, value, size, color = colors.text, weight = "regular") => {
     const label = stack.addText(String(value));
     label.font = weight === "rounded" ? Font.boldRoundedSystemFont(size)
@@ -815,6 +815,8 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, back
     badge.setPadding(5, 8, 5, 8); badge.cornerRadius = 8; badge.backgroundColor = colors.tint;
     text(badge, `${parcelCount} 件待取`, 10, colors.accent, "medium");
   }
+  header.addSpacer(8);
+  text(header, "刷新", 10, colors.accent, "medium").url = urlFor("refresh");
   widget.addSpacer(large ? 10 : 8);
   if (warning) { text(widget, warning, 9, colors.muted); widget.addSpacer(3); }
   if (!sections.length) {
@@ -1374,11 +1376,11 @@ function createInfoSuite() {
     return { background: dynamic("#F2F2F7", "#000000"), card: dynamic("#FFFFFF", "#1C1C1E"),
       text: dynamic("#1C1C1E", "#FFFFFF"), secondary: dynamic("#636366", "#AEAEB2"), accent: new Color(theme.accent) };
   }
-  function link(action) {
+  function link(action, family = "") {
     // 指向当前脚本，无需假设其他脚本安装或命名；入口也会转发 queryParameters。
     const scripts = { dashboard: "信息面板", parcels: "快递", trains: "火车票", countdowns: "倒计时" };
     const parameter = scripts[runningKind] + (runningKind === "dashboard" ? `|${activeProfile}` : runningKind === "countdowns" && countdownSelection ? `|${countdownSelection}` : "");
-    return `scriptable:///run?scriptName=${encodeURIComponent(Script.name())}&remoteScript=${encodeURIComponent(parameter)}&infoAction=${encodeURIComponent(action)}`;
+    return `scriptable:///run?scriptName=${encodeURIComponent(Script.name())}&remoteScript=${encodeURIComponent(parameter)}&infoAction=${encodeURIComponent(action)}${action === "refresh" ? `&infoFamily=${encodeURIComponent(family)}` : ""}`;
   }
   function section(key, settings, now = new Date(), group = null) {
     const state = read(key), data = state.data; let rows = [], hint = state.warning;
@@ -1438,7 +1440,9 @@ function createInfoSuite() {
   }
   function renderSelectedCountdown(family, colors) {
     const widget = new ListWidget(); widget.setPadding(12, 12, 12, 12); widget.backgroundColor = colors.background;
-    widget.url = link("countdowns");
+    widget.url = link(family === "small" ? "refresh" : "countdowns", family);
+    const header = widget.addStack(); header.layoutHorizontally(); header.addSpacer();
+    addText(header, "刷新", Font.semiboldSystemFont(11), colors.accent).url = link("refresh", family);
     const nextDay = new Date(); nextDay.setHours(24, 0, 0, 0); widget.refreshAfterDate = nextDay;
     const state = read("countdowns"), event = state.data.events.find(e => e.name === countdownSelection);
     if (state.warning) { addText(widget, state.warning, Font.systemFont(10), colors.secondary); widget.addSpacer(4); }
@@ -1469,13 +1473,14 @@ function createInfoSuite() {
       }).filter(s => !profile.hideEmpty || s.rows.length || s.warning)
         .map(s => s.rows.length ? s : { ...s, rows: [{ main: "暂无记录", detail: "", status: true }] });
       const background = backgroundFor(settings, family);
-      return renderInfoDashboard({ sections, settings, family, urlFor: link, warning: settingsState.warning || background.warning, backgroundImage: background.image });
+      return renderInfoDashboard({ sections, settings, family, urlFor: action => link(action, family), warning: settingsState.warning || background.warning, backgroundImage: background.image });
     }
     const widget = new ListWidget(); widget.setPadding(10, 12, 10, 12); widget.backgroundColor = colors.background;
-    widget.url = link(kind === "dashboard" ? "dashboard" : kind);
+    widget.url = link(family === "small" ? "refresh" : kind === "dashboard" ? "dashboard" : kind, family);
     widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
     const now = new Date(), header = widget.addStack(); header.layoutHorizontally(); header.size = new Size(0, 20);
     addText(header, `${now.getMonth() + 1}月${now.getDate()}日 周${"日一二三四五六"[now.getDay()]}`, Font.semiboldSystemFont(13), colors.text);
+    header.addSpacer(); addText(header, "刷新", Font.semiboldSystemFont(11), colors.accent).url = link("refresh", family);
     widget.addSpacer(6);
     if (!supported) { addText(widget, "请选择桌面小号、中号或大号组件", Font.systemFont(12), colors.secondary); return widget; }
     if (settingsState.warning) { addText(widget, "配置损坏，使用默认或有效快照", Font.systemFont(10), colors.secondary); widget.addSpacer(3); }
@@ -1505,6 +1510,7 @@ function createInfoSuite() {
   async function presentPreview(kind, family) {
     appPreviewFamily = family;
     const widget = render(kind, family);
+    widget.refreshAfterDate = new Date();
     Script.setWidget(widget);
     await widget[{ large: "presentLarge", medium: "presentMedium", small: "presentSmall" }[family]]();
   }
@@ -1544,7 +1550,11 @@ function createInfoSuite() {
   }
   async function run(kind) {
     runningKind = kind;
-    const parameter = String(args.widgetParameter || "").trim();
+    const query = args.queryParameters || {};
+    const remote = String(query.remoteScript || "");
+    const separator = remote.indexOf("|");
+    const queryParameter = separator < 0 ? "" : remote.slice(separator + 1);
+    const parameter = String(args.widgetParameter || (config.runsInApp ? queryParameter : "")).trim();
     countdownSelection = kind === "countdowns" ? parameter : "";
     let parameterError = "";
     const calibrating = kind === "dashboard" && parameter === "calibrate";
@@ -1559,7 +1569,13 @@ function createInfoSuite() {
       } else Script.setWidget(render(kind));
     } else if (config.runsInApp) {
       if (parameterError) await notify("参数提示", parameterError);
-      const action = args.queryParameters?.infoAction;
+      const action = query.infoAction;
+      if (action === "refresh" && !parameterError && !calibrating) {
+        if (kind === "dashboard") await refreshCalendar();
+        const family = ["small", "medium", "large"].includes(query.infoFamily) ? query.infoFamily : appPreviewFamily;
+        await presentPreview(kind, family);
+        Script.complete(); return;
+      }
       const target = L.moduleIds.includes(action) ? action : kind;
       let received = false;
       if (target === "parcels") await guarded(async () => { received = await receiveParcel(); });
@@ -1568,7 +1584,9 @@ function createInfoSuite() {
         else if (target === "dashboard") { await refreshCalendar(); await dashboardMenu(); }
         else await manage(target);
       }
-      Script.setWidget(render(kind, appPreviewFamily));
+      const widget = render(kind, appPreviewFamily);
+      widget.refreshAfterDate = new Date();
+      Script.setWidget(widget);
     } else Script.setWidget(render(kind));
     Script.complete();
   }

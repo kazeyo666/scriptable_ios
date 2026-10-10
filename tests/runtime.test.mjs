@@ -120,7 +120,7 @@ for (const family of ["small", "medium", "large"]) {
     const h = harness({ family, files: { [dataPath("parcels")]: JSON.stringify({ version: 1, items: Array.from({ length: 30 }, (_, i) => parcel(String(i), { company: "超长中文公司名称".repeat(20) })) }),
       [dataPath("trains")]: JSON.stringify({ version: 1, items: [train()], hideEnded: true }) } });
     await h.suite.run("dashboard");
-    assert.equal(h.dialogs.length, 0); assert.ok(h.rendered.url.includes("infoAction=dashboard"));
+    assert.equal(h.dialogs.length, 0); assert.ok(h.rendered.url.includes(`infoAction=${family === "small" ? "refresh" : "dashboard"}`));
     if (family !== "small") assert.ok(h.nodes.some(n => n.url?.includes("infoAction=parcels")));
     else assert.equal(h.nodes.some(n => n !== h.rendered && n.url), false);
     for (const node of h.nodes) for (const child of node.children || []) if (child.kind === "text") assert.equal(child.lineLimit, 1);
@@ -368,4 +368,45 @@ test("指定事件读取损坏数据时保留原文件并提示异常", async ()
   await h.suite.run("countdowns");
   assert.equal(h.files.get(dataPath("countdowns")), "{broken");
   assert.match(h.text(), /异常|损坏|错误/); assert.match(h.text(), /找不到事件/);
+});
+
+
+for (const family of ["small", "medium", "large"]) {
+  test(`${family} 刷新链接保留组件类型和尺寸，点击读取最新记录且不进管理菜单`, async () => {
+    for (const kind of ["countdowns", "dashboard", "parcels", "trains"]) {
+      const h = harness({ family, parameter: kind === "dashboard" ? "compact" : "" });
+      await h.suite.run(kind);
+      const buttons = h.nodes.flatMap(n => n.children).filter(n => n.kind === "text" && n.value === "刷新");
+      assert.equal(buttons.length, 1);
+      const url = new URL(family === "small" ? h.rendered.url : buttons[0].url);
+      assert.equal(url.searchParams.get("infoAction"), "refresh");
+      assert.equal(url.searchParams.get("infoFamily"), family);
+      const clicked = harness({ app: true, query: Object.fromEntries(url.searchParams) });
+      clicked.suite.write("countdowns", { events: [{ id: "new", name: "刚添加", date: "2099-01-01", text: "" }], defaultId: "new" });
+      const before = Date.now(); await clicked.suite.run(kind);
+      assert.equal(clicked.dialogs.length, 0); assert.equal(clicked.previews.length, 1);
+      assert.equal(clicked.previews[0].family, family); assert.equal(clicked.complete, true);
+      assert.ok(clicked.rendered.refreshAfterDate.getTime() >= before);
+      assert.ok(clicked.rendered.refreshAfterDate.getTime() <= Date.now());
+      if (kind === "countdowns") assert.match(clicked.text(), /刚添加/);
+      if (kind === "dashboard") assert.match(clicked.rendered.url, /compact/);
+      assert.equal(clicked.requests.length, 0);
+    }
+  });
+}
+test("指定事件刷新从点击链接恢复事件名称，不变成列表", async () => {
+  const events = [{ id: "b", name: "生日甲", date: "2000-08-15", calendar: "lunar", text: "" }, { id: "o", name: "交付乙", date: "2099-01-01", text: "" }];
+  const h = harness({ parameter: "生日甲", family: "medium", files: { [dataPath("countdowns")]: JSON.stringify({ events, defaultId: "o" }) } });
+  await h.suite.run("countdowns");
+  const button = h.nodes.flatMap(n => n.children).find(n => n.value === "刷新");
+  const clicked = harness({ app: true, query: Object.fromEntries(new URL(button.url).searchParams), files: Object.fromEntries(h.files) });
+  await clicked.suite.run("countdowns");
+  assert.match(clicked.text(), /生日甲/); assert.doesNotMatch(clicked.text(), /交付乙/);
+  assert.equal(clicked.previews[0].family, "medium"); assert.equal(clicked.dialogs.length, 0);
+});
+test("保存退出管理后提交最新组件，刷新日期不再等待半小时", async () => {
+  const h = harness({ app: true, responses: [action("添加事件"), { action: 0, fields: ["立即显示", "2099-01-01", ""] }, -1] });
+  const before = Date.now(); await h.suite.run("countdowns");
+  assert.match(h.text(), /立即显示/);
+  assert.ok(h.rendered.refreshAfterDate.getTime() >= before && h.rendered.refreshAfterDate.getTime() <= Date.now());
 });

@@ -16,7 +16,7 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, back
   const widget = new ListWidget(); widget.backgroundColor = colors.background;
   if (backgroundImage) widget.backgroundImage = backgroundImage;
   widget.setPadding(large ? 16 : 12, large ? 18 : 12, large ? 16 : 12, large ? 18 : 12);
-  widget.url = urlFor("dashboard"); widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
+  widget.url = urlFor(small ? "refresh" : "dashboard"); widget.refreshAfterDate = new Date(Date.now() + 30 * 60000);
   const text = (stack, value, size, color = colors.text, weight = "regular") => {
     const label = stack.addText(String(value));
     label.font = weight === "rounded" ? Font.boldRoundedSystemFont(size)
@@ -44,6 +44,8 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, back
     badge.setPadding(5, 8, 5, 8); badge.cornerRadius = 8; badge.backgroundColor = colors.tint;
     text(badge, `${parcelCount} 件待取`, 10, colors.accent, "medium");
   }
+  header.addSpacer(8);
+  text(header, "刷新", 10, colors.accent, "medium").url = urlFor("refresh");
   widget.addSpacer(large ? 10 : 8);
   if (warning) { text(widget, warning, 9, colors.muted); widget.addSpacer(3); }
   if (!sections.length) {

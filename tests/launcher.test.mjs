@@ -102,3 +102,11 @@ test("中文名称同样拒绝路径穿越，损坏旧缓存不能迁移为可�
   await assert.rejects(invalid.evaluate(launcher), /无法加载/);
   assert.equal(invalid.files.has(cachePath("倒计时")), false);
 });
+
+
+test("入口刷新跳过同步结果和选择菜单，直接显示最新组件预览", async () => {
+  const h = harness({ app: true, query: { remoteScript: "倒计时", infoAction: "refresh", infoFamily: "medium" } });
+  await h.evaluate(readFileSync(new URL("../入口.js", import.meta.url), "utf8"));
+  assert.equal(h.dialogs.length, 0); assert.equal(h.previews.length, 1);
+  assert.equal(h.previews[0].family, "medium"); assert.equal(h.complete, true);
+});

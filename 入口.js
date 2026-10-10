@@ -136,7 +136,7 @@ for (const script of syncNames) {
   }
 }
 
-if (config.runsInApp) {
+if (config.runsInApp && args.queryParameters?.infoAction !== "refresh") {
   const report = new Alert();
   report.title = "脚本同步结果";
   report.message = `已安装 ${installedNames.length} 个脚本：${installedNames.length ? "\n" + installedNames.join("\n") : "无"}`
