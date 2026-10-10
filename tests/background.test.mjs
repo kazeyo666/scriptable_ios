@@ -115,8 +115,8 @@ test("文字颜色、遮罩与恢复主题菜单保存，恢复主题不删除�
 test("远程更新保留背景 PNG 与配置，恢复旧 JSON 备份仍兼容", async () => {
   const h = harness({ app: true, responses: [10, 1, -1, -1] }); await h.suite.run("dashboard");
   const before = new Map([...h.files].filter(([p]) => p.endsWith(".png") || p === dataPath("settings")));
-  const updated = harness({ app: true, files: { ...Object.fromEntries(h.files), [cachePath("dashboard")]: readFileSync(new URL("../scripts/dashboard.js", import.meta.url), "utf8") }, responses: [-1] });
-  await updated.evaluate(readFileSync(new URL("../RemoteLauncher.js", import.meta.url), "utf8"));
+  const updated = harness({ app: true, files: { ...Object.fromEntries(h.files), [cachePath("信息面板")]: readFileSync(new URL("../scripts/信息面板.js", import.meta.url), "utf8") }, responses: [-1] });
+  await updated.evaluate(readFileSync(new URL("../入口.js", import.meta.url), "utf8"));
   for (const [path, value] of before) assert.deepEqual(updated.files.get(path), value);
   const backup = plain(h.suite.backupObject()); delete backup.data.settings.background;
   const restored = harness(); restored.suite.restoreBackup(backup); assert.equal(restored.suite.read("settings").data.background.mode, "theme");

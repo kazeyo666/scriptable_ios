@@ -103,11 +103,11 @@ export function harness(options = {}) {
           return options.manifest ?? JSON.parse(readFileSync(new URL("../scripts/manifest.json", import.meta.url), "utf8"));
         }
         if (options.apiError) throw Error("directory unavailable");
-        return options.entries || ["countdown", "parcel-list", "train-tickets", "countdown-list", "dashboard"].map(name => ({ type: "file", name: name + ".js" }));
+        return options.entries || ["倒计时", "快递", "火车票", "倒计时列表", "信息面板"].map(name => ({ type: "file", name: name + ".js" }));
       }
       async loadString() {
         if (options.offline) throw Error("offline");
-        const name = this.url.split("/").at(-1).split(".js")[0];
+        const name = decodeURIComponent(this.url.split("/").at(-1).split(".js")[0]);
         return options.sources?.[name] ?? readFileSync(new URL(`../scripts/${name}.js`, import.meta.url), "utf8");
       }
     },

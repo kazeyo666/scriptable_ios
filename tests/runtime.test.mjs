@@ -40,12 +40,12 @@ test("火车票管理、校验重试、日历添加及隐藏配置", async () =>
   assert.equal(h.queue.length, 0);
 });
 test("新增倒计时与原脚本共享同一路径、原格式可读取", async () => {
-  const h = harness({ app: true, responses: [0, 1, { action: 0, fields: ["生日", "2099-01-01", "生日快乐"] }, -1] });
+  const h = harness({ app: true, responses: [0, { action: 0, fields: ["生日", "2099-01-01", "生日快乐"] }, -1] });
   await h.suite.run("countdowns");
   assert.ok(h.files.has("/docs/scriptable-countdown-events.json"));
   assert.equal(h.files.has("/docs/scriptable-info-data/countdowns.json"), false);
   const old = harness({ files: Object.fromEntries(h.files) });
-  await old.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+  await old.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
   assert.match(old.text(), /生日快乐/); assert.ok(old.complete);
 });
 test("单个 JSON 文件损坏不影响其他模块，原文件保留并禁止写入", async () => {
@@ -141,20 +141,20 @@ test("独立中号快递显示三条记录，单卡片不受双列宽度限制",
 });
 
 test("生日管理可保存农历和年龄，原单事件脚本读取相同数据", async () => {
-  const h = harness({ app: true, responses: [0, 0, 1, { action: 0, fields: ["中秋生日", "1996-08-15", ""] }, -1] });
+  const h = harness({ app: true, responses: [1, 1, { action: 0, fields: ["中秋生日", "1996-08-15", ""] }, -1] });
   await h.suite.run("countdowns");
   const data = h.suite.read("countdowns").data;
   assert.equal(data.events[0].calendar, "lunar");
   assert.match(h.text(), new RegExp(`今年满 ${new Date().getFullYear() - 1996} 岁`));
   const old = harness({ files: Object.fromEntries(h.files) });
-  await old.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+  await old.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
   assert.match(old.text(), /今年满/); assert.match(old.text(), /农历/);
   assert.equal(old.requests.length, 0);
 });
 test("单事件管理编辑保留农历与闰月字段", async () => {
   const event = { id: "leap", name: "闰月生日", date: "2023-02-01", text: "", calendar: "lunar", leapMonth: true };
-  const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events: [event], defaultId: "leap" }) }, responses: [1, 0, 0, -1] });
-  await h.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+  const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events: [event], defaultId: "leap" }) }, responses: [2, 0, 0, -1] });
+  await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
   const saved = JSON.parse(h.files.get(dataPath("countdowns"))).events[0];
   assert.equal(saved.calendar, "lunar"); assert.equal(saved.leapMonth, true);
 });
@@ -207,7 +207,7 @@ for (const family of ["small", "medium", "large"]) {
   });
 }
 
-test("新增先选生日或其他，生日历法菜单提供阳历、农历和闰月农历", async () => {
+test("倒计时首页直接添加事件或生日，生日历法菜单提供阳历、农历和闰月农历", async () => {
   for (const original of [false, true]) {
     for (const [category, calendar, date, expected, leap] of [
       [1, null, "2099-08-15", "once", false],
@@ -215,17 +215,17 @@ test("新增先选生日或其他，生日历法菜单提供阳历、农历和�
       [0, 1, "1996-08-15", "lunar", false],
       [0, 2, "2023-02-01", "lunar", true],
     ]) {
-      const responses = [0, category];
+      const responses = [category === 0 ? 1 : 0];
       if (calendar !== null) responses.push(calendar);
       responses.push({ action: 0, fields: ["测试事件", date, ""] });
       responses.push(-1);
       const h = harness({ app: true, responses });
-      if (original) await h.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+      if (original) await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
       else await h.suite.run("countdowns");
       const event = JSON.parse(h.files.get(dataPath("countdowns"))).events[0];
       assert.equal(event.calendar, expected); assert.equal(event.leapMonth, leap);
-      const typeMenu = h.dialogs.find(d => d.title === "选择倒计时类型");
-      assert.deepEqual(typeMenu.actions, ["生日", "其他倒计时"]);
+      assert.deepEqual(h.dialogs[0].actions.slice(0, 2), ["添加事件", "添加生日"]);
+      assert.equal(h.dialogs.some(d => d.title === "选择倒计时类型"), false);
       const calendarMenu = h.dialogs.find(d => d.title === "选择生日历法");
       if (category === 0) assert.deepEqual(calendarMenu.actions, ["阳历", "农历", "闰月农历"]);
       else assert.equal(calendarMenu, undefined);
@@ -234,18 +234,18 @@ test("新增先选生日或其他，生日历法菜单提供阳历、农历和�
     }
   }
 });
-test("取消类别、生日历法或表单均不新增数据", async () => {
+test("取消生日历法或事件表单均不新增数据", async () => {
   for (const original of [false, true]) {
-    for (const responses of [[0, -1, -1], [0, 0, -1, -1], [0, 0, 1, -1, -1], [0, 1, -1, -1]]) {
+    for (const responses of [[1, -1, -1], [1, 1, -1, -1], [0, -1, -1]]) {
       const h = harness({ app: true, responses });
-      if (original) await h.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+      if (original) await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
       else await h.suite.run("countdowns");
       assert.equal(h.files.has(dataPath("countdowns")), false);
     }
   }
 });
 test("农历日期输入失败重试保留所选历法，不重复要求选择", async () => {
-  const h = harness({ app: true, responses: [0, 0, 1,
+  const h = harness({ app: true, responses: [1, 1,
     { action: 0, fields: ["农历生日", "1996-08-31", ""] }, 0,
     { action: 0, fields: ["农历生日", "1996-08-15", ""] }, -1] });
   await h.suite.run("countdowns");
@@ -272,17 +272,17 @@ test("编辑生日直接打开表单，取消修改类型不写入，明确选�
   const event = { id: "leap", name: "闰月生日", date: "2023-02-01", text: "", calendar: "lunar", leapMonth: true };
   const originalData = JSON.stringify({ events: [event], defaultId: "leap" });
   for (const original of [false, true]) {
-    const prefix = [original ? 1 : 2, action("编辑")];
+    const prefix = [original ? 2 : 3, action("编辑")];
     const cancelled = harness({ app: true, files: { [dataPath("countdowns")]: originalData }, responses: [...prefix,
       { action: "修改类型／历法", fields: ["未保存", "2023-02-01", ""] }, -1, -1, -1] });
-    if (original) await cancelled.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+    if (original) await cancelled.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
     else await cancelled.suite.run("countdowns");
     assert.equal(cancelled.files.get(dataPath("countdowns")), originalData);
     assert.ok(cancelled.dialogs[2].fields.length === 3);
     assert.equal(cancelled.dialogs.filter(d => d.title === "选择倒计时类型").length, 1);
     const saved = harness({ app: true, files: { [dataPath("countdowns")]: originalData }, responses: [...prefix,
       action("修改类型／历法"), action("生日"), action("阳历"), action("保存"), -1] });
-    if (original) await saved.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+    if (original) await saved.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
     else await saved.suite.run("countdowns");
     const updated = JSON.parse(saved.files.get(dataPath("countdowns"))).events[0];
     assert.equal(updated.calendar, "solar"); assert.equal(updated.leapMonth, false);
@@ -322,7 +322,7 @@ test("备份入口统一到面板首页，独立组件仍能导出备份", async
 test("原单事件管理也直接分页列出记录，删除末页默认事件后保留有效默认", async () => {
   const events = Array.from({ length: 16 }, (_, i) => ({ id: String(i), name: `事件${i}`, date: "2099-01-01", text: "" }));
   const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events, defaultId: "15" }) }, responses: [action("下一页"), action("其他 · 事件15 · 2099-01-01（默认）"), action("删除"), 0, -1] });
-  await h.evaluate(readFileSync(new URL("../scripts/countdown.js", import.meta.url), "utf8"));
+  await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
   const saved = JSON.parse(h.files.get(dataPath("countdowns")));
   assert.equal(saved.events.length, 15); assert.equal(saved.defaultId, "0");
   assert.equal(h.dialogs.at(-1).actions.includes("下一页"), false);
@@ -334,4 +334,14 @@ test("统一备份入口恢复仍需确认，取消后不覆盖现有记录", as
   await h.suite.run("dashboard");
   assert.equal(h.suite.read("parcels").data.items.length, 1);
   assert.ok(h.dialogs.some(d => d.title === "替换全部本地数据？"));
+});
+
+test("信息面板的倒计时入口直接添加事件，不再弹出类别菜单，跳转使用中文名称", async () => {
+  const h = harness({ app: true, scriptName: "信息面板", responses: [3, action("添加事件"), { action: 0, fields: ["交付", "2099-01-01", ""] }, -1, -1] });
+  await h.suite.run("dashboard");
+  assert.equal(h.suite.read("countdowns").data.events[0].calendar, "once");
+  assert.equal(h.dialogs.some(d => d.title === "选择倒计时类型"), false);
+  const link = new URL(h.rendered.url);
+  assert.equal(link.searchParams.get("scriptName"), "信息面板");
+  assert.equal(link.searchParams.get("remoteScript"), "信息面板|default");
 });

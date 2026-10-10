@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-for (const path of ["RemoteLauncher.js", ...readdirSync(resolve(root, "scripts")).filter(n => n.endsWith(".js")).map(n => "scripts/" + n)]) {
+for (const path of ["入口.js", ...readdirSync(resolve(root, "scripts")).filter(n => n.endsWith(".js")).map(n => "scripts/" + n)]) {
   new AsyncFunction(readFileSync(resolve(root, path), "utf8"));
 }
 console.log("入口及全部组件语法检查通过");

@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const body = ["src/logic.js", "src/widget-geometry.js", "src/background.js", "src/calibration.js", "src/dashboard.js", "src/runtime.js"].map(path => readFileSync(resolve(root, path), "utf8")).join("\n");
-const scripts = { "parcel-list": "parcels", "train-tickets": "trains", "countdown-list": "countdowns", dashboard: "dashboard" };
+const scripts = { "快递": "parcels", "火车票": "trains", "倒计时列表": "countdowns", "信息面板": "dashboard" };
 const check = process.argv.includes("--check");
 for (const [name, kind] of Object.entries(scripts)) {
   const source = `// Variables used by Scriptable.\n// icon-color: blue; icon-glyph: th-large;\n\n// 由 tools/build.mjs 生成；请修改 src/ 后重新生成。独立运行，无外部模块依赖。\n${body}\nawait createInfoSuite().run(${JSON.stringify(kind)});\n`;
@@ -21,12 +21,12 @@ const countdown = `// Variables used by Scriptable.
 ${readFileSync(resolve(root, "src/logic.js"), "utf8")}
 ${readFileSync(resolve(root, "src/countdown.js"), "utf8")}`;
 new (Object.getPrototypeOf(async function () {}).constructor)(countdown);
-const countdownPath = resolve(root, "scripts/countdown.js");
+const countdownPath = resolve(root, "scripts/倒计时.js");
 if (check) {
-  if (readFileSync(countdownPath, "utf8") !== countdown) throw new Error("需要重新生成 countdown.js");
+  if (readFileSync(countdownPath, "utf8") !== countdown) throw new Error("需要重新生成 倒计时.js");
 } else writeFileSync(countdownPath, countdown);
 // 为目录 API 被限流或无法访问的手机提供同域名 Raw 备用发现路径。
-const names = readdirSync(resolve(root, "scripts")).filter(name => /^[a-zA-Z0-9_-]+\.js$/.test(name))
+const names = readdirSync(resolve(root, "scripts")).filter(name => /^[a-zA-Z0-9_\-\u3400-\u9fff]+\.js$/.test(name))
   .map(name => name.slice(0, -3)).sort();
 const manifest = JSON.stringify({ version: 1, scripts: names }, null, 2) + "\n";
 const manifestPath = resolve(root, "scripts/manifest.json");

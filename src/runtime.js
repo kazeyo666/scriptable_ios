@@ -110,15 +110,15 @@ function createInfoSuite() {
       } catch (error) { await notify("请检查输入", error.message); }
     }
   }
-  async function chooseCountdownType() {
-    const category = await choose("选择倒计时类型", ["生日", "其他倒计时"], "生日每年循环并显示年龄；其他倒计时按目标日期计算。");
+  async function chooseCountdownType(birthdayOnly = false) {
+    const category = birthdayOnly ? 0 : await choose("选择倒计时类型", ["生日", "其他倒计时"], "生日每年循环并显示年龄；其他倒计时按目标日期计算。");
     if (category < 0) return null;
     if (category === 1) return "其他";
     const calendar = await choose("选择生日历法", ["阳历", "农历", "闰月农历"], "阳历生日选阳历；农历生日选农历，出生在农历闰月选闰月农历。");
     return calendar < 0 ? null : ["阳历", "农历", "闰月农历"][calendar];
   }
-  async function editCountdown(existing) {
-    let type = existing ? L.countdownType(existing) : await chooseCountdownType();
+  async function editCountdown(existing, initialType = null) {
+    let type = existing ? L.countdownType(existing) : initialType === "birthday" ? await chooseCountdownType(true) : initialType || await chooseCountdownType();
     if (!type) return;
     let values = [existing?.name || "", existing?.date || "", existing?.text || ""];
     while (true) {
@@ -195,7 +195,7 @@ function createInfoSuite() {
       const state = read(key), items = key === "countdowns" ? state.data.events : state.data.items;
       page = Math.min(page, Math.max(0, Math.ceil(items.length / 15) - 1));
       const slice = items.slice(page * 15, page * 15 + 15);
-      const actions = ["新增记录", "预览当前尺寸"];
+      const actions = key === "countdowns" ? ["添加事件", "添加生日", "预览当前尺寸"] : ["新增记录", "预览当前尺寸"];
       if (key !== "countdowns") actions.push("批量导入 JSON");
       if (key === "trains") actions.push(state.data.hideEnded ? "已结束行程：隐藏（点击切换）" : "已结束行程：显示（点击切换）");
       const offset = actions.length;
@@ -206,8 +206,14 @@ function createInfoSuite() {
       const result = await choose(`${labels[key]}管理`, actions, `${state.warning || "点选记录可编辑或操作。"} 共 ${items.length} 条${items.length > 15 ? `，第 ${page + 1} 页` : ""}。`);
       if (result < 0) return;
       await guarded(async () => {
-        if (result === 0) return await editor(null);
-        if (result === 1) return await preview(key);
+        if (key === "countdowns") {
+          if (result === 0) return await editCountdown(null, "其他");
+          if (result === 1) return await editCountdown(null, "birthday");
+          if (result === 2) return await preview(key);
+        } else {
+          if (result === 0) return await editor(null);
+          if (result === 1) return await preview(key);
+        }
         if (actions[result] === "批量导入 JSON") return await importRecords(key);
         if (actions[result] === "面板设置与备份") return await dashboardMenu();
         if (actions[result] === "下一页") { page++; return; }
@@ -384,7 +390,7 @@ function createInfoSuite() {
     await presentPreview("dashboard", "large");
   }
   async function calibrationMenu() {
-    const size = await choose("校准组件尺寸", ["大号", "中号", "小号"], "先把桌面组件参数改为 calibrate（远程入口填 dashboard|calibrate），截含紫色组件的完整桌面图，再截同壁纸空白页。接下来依次选择这两张截图，保存后改回 default。"); if (size < 0) return;
+    const size = await choose("校准组件尺寸", ["大号", "中号", "小号"], "先把桌面组件参数改为 calibrate（远程入口填 信息面板|calibrate），截含紫色组件的完整桌面图，再截同壁纸空白页。接下来依次选择这两张截图，保存后改回 default。"); if (size < 0) return;
     const family = ["large", "medium", "small"][size];
     const position = await choose("校准组件的位置", backgroundPositions(family), "选择当前紫色组件所在位置，程序自动测量截图中的真实边界。"); if (position < 0) return;
     let reference; try { reference = await Photos.fromLibrary(); } catch (_) { return; }
@@ -479,7 +485,7 @@ function createInfoSuite() {
   }
   function link(action) {
     // 指向当前脚本，无需假设其他脚本安装或命名；入口也会转发 queryParameters。
-    const scripts = { dashboard: "dashboard", parcels: "parcel-list", trains: "train-tickets", countdowns: "countdown-list" };
+    const scripts = { dashboard: "信息面板", parcels: "快递", trains: "火车票", countdowns: "倒计时列表" };
     const parameter = scripts[runningKind] + (runningKind === "dashboard" ? `|${activeProfile}` : "");
     return `scriptable:///run?scriptName=${encodeURIComponent(Script.name())}&remoteScript=${encodeURIComponent(parameter)}&infoAction=${encodeURIComponent(action)}`;
   }

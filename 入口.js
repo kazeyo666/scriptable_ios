@@ -3,20 +3,23 @@
 
 // 每次运行同步 scripts/ 下全部 .js，并安装到 Scriptable 脚本列表。
 // App 内选择脚本，小组件用参数选择。
-// 参数格式：脚本名|脚本参数，例如 countdown|生日。
+// 参数格式：脚本名|脚本参数，例如 倒计时|生日。
 const OWNER = "kazeyo666";
 const REPO = "scriptable_ios";
 const BRANCH = "main";
-const DEFAULT_SCRIPT = "countdown";
+const DEFAULT_SCRIPT = "倒计时";
+const LEGACY_NAMES = { countdown: "倒计时", "countdown-list": "倒计时列表", "parcel-list": "快递", "train-tickets": "火车票", dashboard: "信息面板" };
+const canonicalName = value => Object.prototype.hasOwnProperty.call(LEGACY_NAMES, value) ? LEGACY_NAMES[value] : value;
 // 即使目录 API 和远程清单都失败，也能尝试安装当前版本的核心组件。
-const BUNDLED_SCRIPTS = ["countdown", "countdown-list", "dashboard", "parcel-list", "train-tickets"];
+const BUNDLED_SCRIPTS = ["倒计时", "倒计时列表", "信息面板", "快递", "火车票"];
 const parameter = String(args.widgetParameter || args.queryParameters?.remoteScript || "").trim();
 const separator = parameter.indexOf("|");
 let name = (separator < 0 ? parameter : parameter.slice(0, separator)).trim()
   .replace(/\.js$/, "") || DEFAULT_SCRIPT;
 const scriptParameter = separator < 0 ? "" : parameter.slice(separator + 1).trim();
-if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
-  throw new Error("脚本名只能包含字母、数字、下划线和连字符。");
+name = canonicalName(name);
+if (!/^[a-zA-Z0-9_\-\u3400-\u9fff]+$/.test(name)) {
+  throw new Error("脚本名只能包含中文、字母、数字、下划线和连字符。");
 }
 
 const fm = FileManager.local();
@@ -40,6 +43,14 @@ function validateSource(source) {
   return source;
 }
 const cachePathFor = script => fm.joinPath(cacheDir, `${cachePrefix}${script}.js`);
+// 离线也能沿用旧英文入口的已校验缓存，不迁移或改写私人数据。
+for (const [oldName, newName] of Object.entries(LEGACY_NAMES)) {
+  const oldPath = cachePathFor(oldName), newPath = cachePathFor(newName);
+  if (!fm.fileExists(newPath) && fm.fileExists(oldPath)) {
+    try { fm.writeString(newPath, validateSource(fm.readString(oldPath))); }
+    catch (error) { console.warn(`${oldName} 缓存迁移失败：${error.message}`); }
+  }
+}
 let names;
 let discoveryNote = "";
 
@@ -51,8 +62,9 @@ try {
   if (request.response.statusCode !== 200 || !Array.isArray(entries)) {
     throw new Error(`脚本目录读取失败：HTTP ${request.response.statusCode}`);
   }
-  names = entries.filter(entry => entry.type === "file" && /^[a-zA-Z0-9_-]+\.js$/.test(entry.name))
-    .map(entry => entry.name.slice(0, -3)).sort();
+  names = entries.filter(entry => entry.type === "file" && /^[a-zA-Z0-9_\-\u3400-\u9fff]+\.js$/.test(entry.name))
+    .map(entry => canonicalName(entry.name.slice(0, -3)));
+  names = [...new Set(names)].sort();
 } catch (error) {
   console.warn(`无法读取远程目录：${error.message}；尝试备用脚本清单。`);
   try {
@@ -60,17 +72,17 @@ try {
     request.timeoutInterval = 15;
     const manifest = await request.loadJSON();
     if (request.response.statusCode !== 200 || manifest?.version !== 1 || !Array.isArray(manifest.scripts)
-      || !manifest.scripts.length || !manifest.scripts.every(script => typeof script === "string" && /^[a-zA-Z0-9_-]+$/.test(script))) {
+      || !manifest.scripts.length || !manifest.scripts.every(script => typeof script === "string" && /^[a-zA-Z0-9_\-\u3400-\u9fff]+$/.test(script))) {
       throw new Error("备用脚本清单格式无效");
     }
-    names = [...new Set(manifest.scripts)].sort();
+    names = [...new Set(manifest.scripts.map(canonicalName))].sort();
     discoveryNote = "目录接口不可用，已通过备用清单发现脚本。";
   } catch (manifestError) {
     console.warn(`备用清单不可用：${manifestError.message}；尝试当前版本核心脚本和已有缓存。`);
     const cached = fm.listContents(cacheDir)
       .filter(file => file.startsWith(cachePrefix) && file.endsWith(".js"))
       .map(file => file.slice(cachePrefix.length, -3))
-      .filter(script => /^[a-zA-Z0-9_-]+$/.test(script));
+      .filter(script => /^[a-zA-Z0-9_\-\u3400-\u9fff]+$/.test(script)).map(canonicalName);
     names = [...new Set([...BUNDLED_SCRIPTS, ...cached])].sort();
     discoveryNote = "目录与备用清单不可用，已尝试安装当前版本的核心脚本。";
   }
@@ -83,7 +95,7 @@ const failures = new Map();
 for (let offset = 0; offset < syncNames.length; offset += 3) {
   const batch = syncNames.slice(offset, offset + 3);
   const results = await Promise.allSettled(batch.map(async script => {
-    const request = new Request(`${rawBase}${script}.js?t=${Date.now()}`);
+    const request = new Request(`${rawBase}${encodeURIComponent(script)}.js?t=${Date.now()}`);
     request.timeoutInterval = 15;
     const source = await request.loadString();
     if (request.response.statusCode !== 200 || !source.trim()) {
@@ -111,7 +123,7 @@ for (const script of syncNames) {
   const scriptPath = scriptFiles.joinPath(scriptsDir, `${script}.js`);
   try {
     if (scriptPath === module.filename) {
-      throw new Error("与当前入口文件同名，请先将入口改名为 RemoteLauncher 再同步。");
+      throw new Error("与当前入口文件同名，请先将入口改名为 入口 再同步。");
     }
     const source = fm.readString(cachePath);
     validateSource(source);
@@ -166,7 +178,7 @@ async function selectAndRun() {
   } else {
     const cachePath = cachePathFor(name);
     if (!fm.fileExists(cachePath)) {
-      throw new Error(`无法加载 ${name}.js：${failures.get(name) || "没有本地缓存"}\n下载地址：${rawBase}${name}.js`);
+      throw new Error(`无法加载 ${name}.js：${failures.get(name) || "没有本地缓存"}\n下载地址：${rawBase}${encodeURIComponent(name)}.js`);
     }
     if (failures.has(name)) console.warn(`${name} 使用上次下载的脚本缓存。`);
     const run = new AsyncFunction("args", validateSource(fm.readString(cachePath)));

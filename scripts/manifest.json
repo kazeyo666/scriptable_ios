@@ -1,10 +1,10 @@
 {
   "version": 1,
   "scripts": [
-    "countdown",
-    "countdown-list",
-    "dashboard",
-    "parcel-list",
-    "train-tickets"
+    "信息面板",
+    "倒计时",
+    "倒计时列表",
+    "快递",
+    "火车票"
   ]
 }

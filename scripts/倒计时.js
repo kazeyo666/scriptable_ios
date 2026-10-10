@@ -356,7 +356,7 @@ const InfoLogic = (() => {
 })();
 
 // 在 App 内运行管理事件；小组件参数填写事件名称，留空显示默认事件。
-// 经 RemoteLauncher 加载时，参数填写 countdown|事件名称。
+// 经 入口 加载时，参数填写 倒计时|事件名称。
 const fm = FileManager.local();
 const dataPath = fm.joinPath(fm.documentsDirectory(), "scriptable-countdown-events.json");
 let settings;
@@ -459,15 +459,15 @@ async function chooseOption(title, options, detail = "") {
   return await alert.presentSheet();
 }
 
-async function chooseEventType() {
-  const category = await chooseOption("选择倒计时类型", ["生日", "其他倒计时"], "生日每年循环并显示年龄；其他倒计时按目标日期计算。");
+async function chooseEventType(birthdayOnly = false) {
+  const category = birthdayOnly ? 0 : await chooseOption("选择倒计时类型", ["生日", "其他倒计时"], "生日每年循环并显示年龄；其他倒计时按目标日期计算。");
   if (category < 0) return null;
   if (category === 1) return "其他";
   const calendar = await chooseOption("选择生日历法", ["阳历", "农历", "闰月农历"], "阳历生日选阳历；农历生日选农历，出生在农历闰月选闰月农历。");
   return calendar < 0 ? null : ["阳历", "农历", "闰月农历"][calendar];
 }
-async function editEvent(existing = null) {
-  let type = existing ? InfoLogic.countdownType(existing) : await chooseEventType();
+async function editEvent(existing = null, initialType = null) {
+  let type = existing ? InfoLogic.countdownType(existing) : initialType === "birthday" ? await chooseEventType(true) : initialType || await chooseEventType();
   if (!type) return;
   let name = existing?.name || "", date = existing?.date || "", caption = existing?.text || "";
   while (true) {
@@ -512,15 +512,16 @@ async function manageEvents() {
   while (true) {
     page = Math.min(page, Math.max(0, Math.ceil(settings.events.length / 15) - 1));
     const events = settings.events.slice(page * 15, page * 15 + 15);
-    const options = ["添加事件", ...events.map(event => `${InfoLogic.isBirthday(event) ? "生日" : "其他"} · ${event.name} · ${event.date}${event.id === settings.defaultId ? "（默认）" : ""}`)];
+    const options = ["添加事件", "添加生日", ...events.map(event => `${InfoLogic.isBirthday(event) ? "生日" : "其他"} · ${event.name} · ${event.date}${event.id === settings.defaultId ? "（默认）" : ""}`)];
     if ((page + 1) * 15 < settings.events.length) options.push("下一页");
     if (page > 0) options.push("上一页");
     const action = await chooseOption("倒计时管理", options, `共 ${settings.events.length} 条。点选事件可编辑、删除、设默认或预览。参数填事件名称，留空显示默认事件。`);
     if (action < 0) return;
-    if (action === 0) { await editEvent(); continue; }
+    if (action === 0) { await editEvent(null, "其他"); continue; }
+    if (action === 1) { await editEvent(null, "birthday"); continue; }
     if (options[action] === "下一页") { page++; continue; }
     if (options[action] === "上一页") { page--; continue; }
-    const event = events[action - 1]; if (!event) continue;
+    const event = events[action - 2]; if (!event) continue;
     const op = await chooseOption(event.name, ["编辑", "删除", "设为默认事件", "预览事件"]);
     if (op === 0) await editEvent(event);
     if (op === 1) {

@@ -34,7 +34,7 @@ test("calibrate 参数在 Widget 中只呈现校准色，无菜单、网络或�
   const h=harness({parameter:"calibrate",systemVersion:"27.0"}); await h.suite.run("dashboard");
   assert.equal(h.rendered.backgroundColor.value,"#FF00FF"); assert.equal(h.files.size,0); assert.equal(h.dialogs.length,0);assert.equal(h.requests.length,0);
   const remote=harness({parameter:"dashboard|calibrate",systemVersion:"27.0"});
-  await remote.evaluate(readFileSync(new URL("../RemoteLauncher.js",import.meta.url),"utf8"));
+  await remote.evaluate(readFileSync(new URL("../入口.js",import.meta.url),"utf8"));
   assert.equal(remote.rendered.backgroundColor.value,"#FF00FF"); assert.equal(remote.dialogs.length,0);
 });
 test("iOS 27 本机自动校准保存测量值，复用时不再走旧表", async () => {
