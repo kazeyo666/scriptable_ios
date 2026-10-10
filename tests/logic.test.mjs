@@ -78,3 +78,71 @@ for (const family of ["small", "medium", "large"]) {
     }
   });
 }
+
+const birthday = (date, calendar = "solar", extra = {}) => ({ id: date, name: date, date, text: "", calendar, ...extra });
+test("阳历生日每年循环、当天和次日切年，年龄为今年满岁", () => {
+  const event = birthday("1996-10-10");
+  const today = L.countdownEvent(event, new Date(2026, 9, 10, 23, 59));
+  assert.equal(today.days, 0); assert.equal(today.age, 30);
+  const next = L.countdownEvent(event, new Date(2026, 9, 11));
+  assert.equal(next.nextDate, "2027-10-10"); assert.equal(next.age, 30);
+  assert.equal(L.countdownEvent(event, new Date(2027, 0, 1)).age, 31);
+  assert.equal(L.countdownEvent(birthday("2000-02-29"), new Date(2027, 0, 1)).nextDate, "2027-02-28");
+  assert.equal(L.countdownEvent(birthday("2000-02-29"), new Date(2028, 0, 1)).nextDate, "2028-02-29");
+});
+test("农历春节、中秋、闰月与腊月跨年转换", () => {
+  assert.equal(L.lunarToSolar(2026, 1, 1), "2026-02-17");
+  assert.equal(L.lunarToSolar(2026, 8, 15), "2026-09-25");
+  assert.equal(L.lunarToSolar(2023, 2, 1, true), "2023-03-22");
+  const event = birthday("1996-08-15", "lunar");
+  assert.equal(L.countdownEvent(event, new Date(2026, 8, 25)).days, 0);
+  assert.equal(L.countdownEvent(event, new Date(2026, 8, 26)).nextDate, "2027-09-15");
+  assert.equal(L.countdownEvent(birthday("1996-12-15", "lunar"), new Date(2026, 0, 1)).nextDate, L.lunarToSolar(2025, 12, 15));
+  const leap = birthday("2023-02-01", "lunar", { leapMonth: true });
+  assert.equal(L.countdownEvent(leap, new Date(2023, 0, 1)).nextDate, "2023-03-22");
+  assert.equal(L.countdownEvent(leap, new Date(2024, 0, 1)).nextDate, L.lunarToSolar(2024, 2, 1));
+  assert.equal(L.countdownEvent(birthday("2023-02-30", "lunar"), new Date(2025, 0, 1)).nextDate, L.lunarToSolar(2025, 2, 29));
+});
+test("农历年表首末日期与 ICU 中国历核对，覆盖 1900—2100 和 2033 闰十一月", () => {
+  const f = new Intl.DateTimeFormat("en-u-ca-chinese", { timeZone: "UTC", year: "numeric", month: "numeric", day: "numeric" });
+  for (let year = 1900; year <= 2100; year++) {
+    for (let month = 1; month <= 12; month++) {
+      for (const leap of [false, true]) {
+        let first;
+        try { first = L.lunarToSolar(year, month, 1, leap); } catch { if (leap) continue; throw Error("缺失普通月"); }
+        for (const day of [1, 29, 30]) {
+          let solar;
+          try { solar = L.lunarToSolar(year, month, day, leap); } catch { if (day === 30) continue; throw Error("缺失农历日"); }
+          const p = Object.fromEntries(f.formatToParts(new Date(`${solar}T12:00:00Z`)).map(p => [p.type, p.value]));
+          assert.equal(+p.relatedYear, year); assert.equal(parseInt(p.month), month);
+          assert.equal(p.month.includes("bis"), leap); assert.equal(+p.day, day);
+        }
+      }
+    }
+  }
+  assert.equal(L.lunarToSolar(2033, 11, 1, true), "2033-12-22");
+});
+test("生日字段校验、备份保留、按下次日期而非出生年份排序", () => {
+  const events = [birthday("1990-12-01"), birthday("2000-10-12"), birthday("1996-08-15", "lunar")];
+  const data = L.validate("countdowns", { events, defaultId: events[0].id });
+  assert.equal(data.events[2].calendar, "lunar");
+  assert.deepEqual(plain(L.countdowns(data, new Date(2026, 9, 10)).map(e => e.date)), ["2000-10-12", "1990-12-01", "1996-08-15"]);
+  for (const event of [birthday("2023-02-01", "lunar", { leapMonth: "true" }), birthday("2023-03-01", "lunar", { leapMonth: true }), birthday("1899-01-01", "lunar"), birthday("2101-01-01", "lunar"), birthday("2023-01-31", "lunar"), birthday("2023-01-01", "bad")]) {
+    assert.throws(() => L.validate("countdowns", { events: [event] }));
+  }
+});
+
+test("生日与其他倒计时独立分组排序，旧普通记录兼容且未来优先", () => {
+  const events = [
+    { id: "old", name: "去年到期", date: "2025-01-01", text: "" },
+    { id: "recent", name: "昨天到期", date: "2026-10-09", text: "", calendar: "once" },
+    { id: "later", name: "下月到期", date: "2026-11-01", text: "" },
+    { id: "today", name: "今天到期", date: "2026-10-10", text: "" },
+    birthday("1996-08-15", "lunar"), birthday("1990-10-12"),
+  ];
+  const groups = L.countdownGroups({ events }, new Date(2026, 9, 10));
+  assert.deepEqual(plain(groups.birthdays.map(e => e.date)), ["1990-10-12", "1996-08-15"]);
+  assert.deepEqual(plain(groups.other.map(e => e.id)), ["today", "later", "recent", "old"]);
+  assert.ok(groups.other.every(e => e.age === undefined));
+  assert.deepEqual(plain(L.countdownInput("其他")), plain(L.countdownInput("普通")));
+});

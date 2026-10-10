@@ -68,7 +68,8 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, back
     }
     if (row.kind === "countdown") {
       const line = horizontal(parent, 21);
-      text(line, L.truncate(row.name, small || columnMode ? 7 : 18), large ? 13 : 10);
+      text(line, L.truncate(row.name, row.age === undefined ? (small || columnMode ? 7 : 18) : (small || columnMode ? 5 : 12)), large ? 13 : 10);
+      if (row.age !== undefined) { line.addSpacer(4); text(line, `今年满${row.age}岁`, large ? 10 : 8, colors.muted); }
       line.addSpacer();
       const pill = line.addStack(); pill.layoutHorizontally(); pill.centerAlignContent();
       if (large) { pill.setPadding(2, 6, 2, 6); pill.cornerRadius = 5; pill.backgroundColor = row.days < 0 ? colors.line : colors.tint; }

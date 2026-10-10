@@ -4,7 +4,7 @@ function createInfoSuite() {
   const fm = FileManager.local();
   const root = fm.joinPath(fm.documentsDirectory(), "scriptable-info-data");
   fm.createDirectory(root, true);
-  const labels = { parcels: "待取快递", trains: "近期出行", calendar: "日程", countdowns: "重要倒计时" };
+  const labels = { parcels: "待取快递", trains: "近期出行", calendar: "日程", countdowns: "生日 / 其他倒计时" };
   const symbols = { parcels: "shippingbox.fill", trains: "tram.fill", calendar: "calendar", countdowns: "flag.fill" };
   const files = { parcels: "parcels.json", trains: "trains.json", settings: "dashboard.json", calendar: "calendar-cache.json" };
   const pathFor = key => key === "countdowns"
@@ -13,7 +13,7 @@ function createInfoSuite() {
   const nowISO = () => new Date().toISOString();
   let activeProfile = "default";
   let runningKind = "dashboard";
-  let appPreviewFamily = "large";
+  let appPreviewFamily = ["small", "medium", "large"].includes(config.widgetFamily) ? config.widgetFamily : "large";
 
   function read(key) {
     const path = pathFor(key);
@@ -78,24 +78,8 @@ function createInfoSuite() {
   async function guarded(action) {
     try { await action(); } catch (error) { await notify("操作未完成", String(error.message || error)); }
   }
-  async function pickRecord(key) {
-    const data = editable(key), items = key === "countdowns" ? data.events : data.items;
-    if (!items.length) { await notify("暂无记录", "请先添加记录。"); return null; }
-    // 分页不限制保存数量，避免 Alert 一次塞入大量按钮。
-    let page = 0;
-    while (true) {
-      const slice = items.slice(page * 15, page * 15 + 15);
-      const titleFor = item => key === "parcels" ? `${item.status === "collected" ? "已取 · " : ""}${item.company} · ${item.code}`
-        : key === "trains" ? `${item.date} ${item.number} ${item.from}→${item.to}` : `${item.name} · ${item.date}`;
-      const actions = slice.map(item => L.truncate(titleFor(item), 44));
-      if ((page + 1) * 15 < items.length) actions.push("下一页");
-      if (page > 0) actions.push("上一页");
-      const result = await choose("选择记录", actions, `第 ${page + 1} 页，共 ${items.length} 条`);
-      if (result < 0) return null;
-      if (result < slice.length) return slice[result];
-      if (actions[result] === "下一页") page++; else page--;
-    }
-  }
+  const recordTitle = (key, item) => key === "parcels" ? `${item.status === "collected" ? "已取 · " : ""}${item.company} · ${item.code}`
+    : key === "trains" ? `${item.date} ${item.number} ${item.from}→${item.to}` : `${L.isBirthday(item) ? "生日" : "其他"} · ${item.name} · ${item.date}`;
   async function editParcel(existing) {
     let values = existing ? [existing.company, existing.code, existing.station, existing.note] : ["", "", "", ""];
     while (true) {
@@ -126,14 +110,28 @@ function createInfoSuite() {
       } catch (error) { await notify("请检查输入", error.message); }
     }
   }
+  async function chooseCountdownType() {
+    const category = await choose("选择倒计时类型", ["生日", "其他倒计时"], "生日每年循环并显示年龄；其他倒计时按目标日期计算。");
+    if (category < 0) return null;
+    if (category === 1) return "其他";
+    const calendar = await choose("选择生日历法", ["阳历", "农历", "闰月农历"], "阳历生日选阳历；农历生日选农历，出生在农历闰月选闰月农历。");
+    return calendar < 0 ? null : ["阳历", "农历", "闰月农历"][calendar];
+  }
   async function editCountdown(existing) {
+    let type = existing ? L.countdownType(existing) : await chooseCountdownType();
+    if (!type) return;
     let values = [existing?.name || "", existing?.date || "", existing?.text || ""];
     while (true) {
-      const input = await fields(existing ? "编辑倒计时" : "新增倒计时", ["事件名称", "日期 YYYY-MM-DD", "显示文案（可选）"].map((s, i) => [s, values[i]]), "与原 countdown 共用事件数据，按设备本地日历日期计数。");
-      if (!input) return;
-      values = input;
+      const birthday = type !== "其他", alert = new Alert();
+      alert.title = existing ? "编辑倒计时" : birthday ? "新增生日" : "新增其他倒计时";
+      alert.message = birthday ? `当前：${type}生日。填写出生年月日，每年循环并显示今年满几岁。${type === "阳历" ? "2月29日平年按28日。" : "填写农历数字年月日，例如八月十五填 YYYY-08-15。支持1900—2100年；无对应闰月按普通月；三十遇小月按廿九。"}` : "按设备本地日期计算到目标日期的天数，不按年循环。";
+      [birthday ? "姓名／生日名称" : "事件名称", birthday ? `${type}出生日期 YYYY-MM-DD` : "目标日期 YYYY-MM-DD", "显示文案（可选）"].forEach((label, i) => alert.addTextField(label, values[i]));
+      alert.addAction("保存"); if (existing) alert.addAction("修改类型／历法"); alert.addCancelAction("取消");
+      const action = await alert.presentAlert(); if (action < 0) return;
+      values = values.map((_, i) => alert.textFieldValue(i).trim());
+      if (action === 1) { const selected = await chooseCountdownType(); if (selected) type = selected; continue; }
       try {
-        const data = editable("countdowns"), event = { id: existing?.id || uuid(), name: input[0], date: input[1], text: input[2] };
+        const data = editable("countdowns"), event = { id: existing?.id || uuid(), name: values[0], date: values[1], text: values[2], ...L.countdownInput(type) };
         data.events = existing ? data.events.map(e => e.id === existing.id ? event : e) : [...data.events, event];
         if (!data.defaultId) data.defaultId = event.id;
         write("countdowns", data); return;
@@ -166,7 +164,7 @@ function createInfoSuite() {
     if (!incoming.length) { await notify("没有可导入的记录", "JSON 数组为空。"); return; }
     data.items = L.mergeItems(data.items, incoming);
     if (!await confirm(`导入 ${incoming.length} 条记录？`, "将追加到已有数据，所有记录先校验再写入。")) return;
-    write(key, data); await notify("导入完成", `已添加 ${incoming.length} 条记录。`);
+    write(key, data);
   }
   async function deleteRecord(key, record) {
     if (!await confirm("删除这条记录？", "删除后可通过此前导出的备份恢复。")) return;
@@ -192,34 +190,38 @@ function createInfoSuite() {
   }
   async function manage(key) {
     const editor = key === "parcels" ? editParcel : key === "trains" ? editTrain : editCountdown;
+    let page = 0;
     while (true) {
-      const actions = ["新增记录", "选择记录（编辑、删除等）", "预览组件"];
+      const state = read(key), items = key === "countdowns" ? state.data.events : state.data.items;
+      page = Math.min(page, Math.max(0, Math.ceil(items.length / 15) - 1));
+      const slice = items.slice(page * 15, page * 15 + 15);
+      const actions = ["新增记录", "预览当前尺寸"];
       if (key !== "countdowns") actions.push("批量导入 JSON");
-      if (key === "trains") actions.push("切换已结束行程显示");
-      actions.push("数据备份与恢复");
-      const result = await choose(`${labels[key]}管理`, actions);
+      if (key === "trains") actions.push(state.data.hideEnded ? "已结束行程：隐藏（点击切换）" : "已结束行程：显示（点击切换）");
+      const offset = actions.length;
+      actions.push(...slice.map(item => L.truncate(recordTitle(key, item), 44)));
+      if ((page + 1) * 15 < items.length) actions.push("下一页");
+      if (page > 0) actions.push("上一页");
+      if (runningKind !== "dashboard") actions.push("面板设置与备份");
+      const result = await choose(`${labels[key]}管理`, actions, `${state.warning || "点选记录可编辑或操作。"} 共 ${items.length} 条${items.length > 15 ? `，第 ${page + 1} 页` : ""}。`);
       if (result < 0) return;
       await guarded(async () => {
         if (result === 0) return await editor(null);
-        if (result === 2) return await preview(key);
+        if (result === 1) return await preview(key);
         if (actions[result] === "批量导入 JSON") return await importRecords(key);
-        if (actions[result] === "数据备份与恢复") return await backupMenu();
-        if (actions[result] === "切换已结束行程显示") {
-          const data = editable(key); data.hideEnded = !data.hideEnded; write(key, data);
-          return await notify("显示设置已保存", data.hideEnded ? "隐藏已结束行程。未填写到达时间时，以出发时刻作为结束阈值。" : "显示全部行程。");
-        }
-        const record = await pickRecord(key); if (!record) return;
+        if (actions[result] === "面板设置与备份") return await dashboardMenu();
+        if (actions[result] === "下一页") { page++; return; }
+        if (actions[result] === "上一页") { page--; return; }
+        if (key === "trains" && result === 3) { const data = editable(key); data.hideEnded = !data.hideEnded; write(key, data); return; }
+        const record = slice[result - offset]; if (!record) return;
         const ops = ["编辑", "删除"];
         if (key === "parcels") ops.push(record.status === "pending" ? "标记已取件" : "恢复为待取件");
         if (key === "trains") ops.push("添加到 iOS 日历");
         if (key === "countdowns") ops.push("设为原单事件组件默认事件");
-        const op = await choose("记录操作", ops);
+        const op = await choose(recordTitle(key, record), ops);
         if (op === 0) await editor(record);
         if (op === 1) await deleteRecord(key, record);
-        if (op === 2 && key === "parcels") {
-          const data = editable(key), item = data.items.find(p => p.id === record.id);
-          item.status = item.status === "pending" ? "collected" : "pending"; write(key, data);
-        }
+        if (op === 2 && key === "parcels") { const data = editable(key); data.items.find(p => p.id === record.id).status = record.status === "pending" ? "collected" : "pending"; write(key, data); }
         if (op === 2 && key === "trains") await addToCalendar(record);
         if (op === 2 && key === "countdowns") { const data = editable(key); data.defaultId = record.id; write(key, data); }
       });
@@ -297,39 +299,39 @@ function createInfoSuite() {
       if (await confirm("恢复有效快照？", "原文件会保留副本；快照可能不包含最近的修改。")) write(key, data, true);
     }
   }
-  async function selectProfile() {
-    const index = await choose("选择面板配置", ["默认面板", "紧凑面板"]);
-    return index < 0 ? null : index === 0 ? "default" : "compact";
-  }
-  async function configureModules(orderOnly = false) {
-    const name = await selectProfile(); if (!name) return;
+  async function configureModules() {
     while (true) {
-      const data = editable("settings"), profile = data.profiles[name];
-      const actions = profile.modules.map(m => `${m.enabled ? "✓" : "○"} ${labels[m.id]} · 最多 ${m.maxItems} 条`);
-      if (!orderOnly) actions.push(profile.hideEmpty ? "空模块：自动隐藏（点击切换）" : "空模块：展示（点击切换）", "日历授权与缓存设置");
-      const index = await choose(orderOnly ? "调整模块顺序" : "配置显示模块", actions);
+      const data = editable("settings"), profile = data.profiles[activeProfile];
+      const actions = profile.modules.map((m, i) => `${i + 1}. ${m.enabled ? "✓" : "○"} ${labels[m.id]} · ${m.id === "countdowns" ? "每组" : "最多"} ${m.id === "countdowns" ? Math.min(3, m.maxItems) : m.maxItems} 条`);
+      actions.push(profile.hideEmpty ? "空模块：自动隐藏（点击切换）" : "空模块：展示（点击切换）");
+      const index = await choose("模块设置", actions, `当前配置：${activeProfile === "default" ? "默认" : "紧凑"}。点选模块，一页调整条数、顺序和显示状态。`);
       if (index < 0) return;
       if (index === profile.modules.length) { profile.hideEmpty = !profile.hideEmpty; write("settings", data); continue; }
-      if (index === profile.modules.length + 1) { await calendarMenu(); continue; }
-      const module = profile.modules[index];
-      if (orderOnly) {
-        const place = await choose("移到第几位？", profile.modules.map((m, i) => `${i + 1} · ${labels[m.id]}`));
-        if (place >= 0) { profile.modules.splice(index, 1); profile.modules.splice(place, 0, module); write("settings", data); }
-      } else {
-        const action = await choose(labels[module.id], [module.enabled ? "禁用模块" : "启用模块", "最大展示条数"]);
-        if (action === 0) { module.enabled = !module.enabled; write("settings", data); }
-        if (action === 1) {
-          const input = await fields("最大展示条数", [["1—20，实际显示受组件尺寸限制", String(module.maxItems)]]);
-          if (input) { module.maxItems = Number(input[0]); write("settings", data); }
+      const module = profile.modules[index], limit = module.id === "countdowns" ? 3 : 20;
+      let values = [String(Math.min(limit, module.maxItems)), String(index + 1)];
+      while (true) {
+        const alert = new Alert(); alert.title = labels[module.id];
+        alert.message = `当前${module.enabled ? "启用" : "禁用"}。${module.id === "countdowns" ? "生日和其他各自最多三条。" : "实际条数受组件空间限制。"}`;
+        alert.addTextField(`最多条数 1—${limit}`, values[0]); alert.addTextField(`显示顺序 1—${profile.modules.length}`, values[1]);
+        alert.addAction("保存设置"); alert.addAction(module.enabled ? "禁用并保存" : "启用并保存"); alert.addCancelAction("取消");
+        const action = await alert.presentAlert(); if (action < 0) break;
+        values = [alert.textFieldValue(0).trim(), alert.textFieldValue(1).trim()];
+        const count = Number(values[0]), position = Number(values[1]);
+        if (!Number.isInteger(count) || count < 1 || count > limit || !Number.isInteger(position) || position < 1 || position > profile.modules.length) {
+          await notify("请检查输入", `条数须为 1—${limit}，顺序须为 1—${profile.modules.length} 的整数。`); continue;
         }
+        module.maxItems = count; if (action === 1) module.enabled = !module.enabled;
+        profile.modules.splice(index, 1); profile.modules.splice(position - 1, 0, module);
+        write("settings", data); break;
       }
     }
   }
   async function themeMenu() {
     const data = editable("settings");
-    const mode = await choose("主题模式", ["跟随系统", "浅色", "深色"]); if (mode < 0) return;
-    const input = await fields("主题强调色", [["六位 HEX，例如 #007AFF", data.theme.accent]]); if (!input) return;
-    data.theme = { mode: ["system", "light", "dark"][mode], accent: input[0] }; write("settings", data);
+    const mode = await choose("组件主题", ["跟随系统", "浅色", "深色", "修改强调色"], `当前：${{system:"跟随系统", light:"浅色", dark:"深色"}[data.theme.mode]}，强调色 ${data.theme.accent}`); if (mode < 0) return;
+    if (mode < 3) data.theme.mode = ["system", "light", "dark"][mode];
+    else { const input = await fields("强调色", [["六位 HEX，例如 #007AFF", data.theme.accent]]); if (!input) return; data.theme.accent = input[0]; }
+    write("settings", data);
   }
   const backgroundRoot = fm.joinPath(root, "backgrounds");
   const backgroundPath = file => fm.joinPath(backgroundRoot, file);
@@ -379,20 +381,12 @@ function createInfoSuite() {
     bg.mode = "transparent"; bg.transparent.large = name;
     bg.calibration.large = { width: image.size.width, height: image.size.height, position: 0, rect };
     saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
-    await notify("已按提供截图制作背景", "大号顶部背景已保存并校验，即将预览。看完点左上角 Close 返回。桌面长按组件→编辑小组件→Script 选择 dashboard，Parameter 留空或 default。使用 RemoteLauncher 时参数填 dashboard|default。请回桌面检查接缝；不要保留 calibrate 参数。");
     await presentPreview("dashboard", "large");
   }
   async function calibrationMenu() {
-    const action = await choose("本机自动校准透明背景", ["查看校准步骤", "导入校准截图并自动裁剪"], "识别紫色组件的真实边界，适用于新机型、新 iOS 和显示缩放。全程本机处理，不需要手动裁剪。");
-    if (action < 0) return;
-    if (action === 0) {
-      await notify("准备两张截图", "1. 桌面保持原色图标模式，临时修改 Dashboard 的组件参数为 calibrate；若 Script 选 RemoteLauncher 则填 dashboard|calibrate。\n2. 紫色校准组件显示后，在当前位置截完整桌面图。请只保留一个对应尺寸的紫色组件。\n3. 再截一张同壁纸的空白桌面图（不预裁剪）。\n4. 返回此入口选择导入校准截图，再选择空白壁纸截图。保存后把参数改回 default（入口为 dashboard|default）。若校准色尚未出现，重新选择组件 Script 并等系统刷新。");
-      return;
-    }
-    const size = await choose("校准组件尺寸", ["大号", "中号", "小号"]); if (size < 0) return;
+    const size = await choose("校准组件尺寸", ["大号", "中号", "小号"], "先把桌面组件参数改为 calibrate（远程入口填 dashboard|calibrate），截含紫色组件的完整桌面图，再截同壁纸空白页。接下来依次选择这两张截图，保存后改回 default。"); if (size < 0) return;
     const family = ["large", "medium", "small"][size];
     const position = await choose("校准组件的位置", backgroundPositions(family), "选择当前紫色组件所在位置，程序自动测量截图中的真实边界。"); if (position < 0) return;
-    await notify("先选择校准截图", "下一步请选择含紫色校准组件的完整桌面截图。不要选择之前的普通组件截图。");
     let reference; try { reference = await Photos.fromLibrary(); } catch (_) { return; }
     const rect = await measureInfoCalibration(reference, family);
     await notify("再选择空白壁纸截图", "组件边界已自动识别。下一步选择同壁纸、同图标大小和缩放的空白桌面完整截图。将从这张图自动裁剪背景。");
@@ -403,84 +397,79 @@ function createInfoSuite() {
     bg.mode = "transparent"; bg.transparent[family] = name;
     bg.calibration[family] = { width: image.size.width, height: image.size.height, position, rect };
     saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
-    await notify("本机校准背景已保存", `已按当前桌面实际尺寸裁剪并校验${["大号", "中号", "小号"][size]}背景。即将打开预览，看完点左上角 Close（关闭）返回，不是卡住。\n请把组件参数改回 default；RemoteLauncher 使用 dashboard|default。同尺寸同位置以后可直接复用校准。换图标大小、缩放或系统布局需重新校准。`);
     await presentPreview("dashboard", family);
+  }
+  async function makeTransparentBackground(forceLegacy = false) {
+    const settings = editable("settings"), bg = settings.background;
+    const allowLegacy = forceLegacy || parseInt(Device.systemVersion?.() || "0", 10) < 26;
+    if (!allowLegacy && !Object.values(bg.calibration).some(Boolean)) return await calibrationMenu();
+    const size = await choose("透明背景尺寸", ["大号", "中号", "小号"], "请选择同壁纸、缩放和图标大小的空白桌面完整截图，不要预裁剪。保存后自动预览。负一屏使用图片背景。"); if (size < 0) return;
+    const family = ["large", "medium", "small"][size];
+    const positions = backgroundPositions(family);
+    const position = await choose("组件在桌面的位置", positions, "根据位置自动裁剪，大号底部从中间一行开始。"); if (position < 0) return;
+    let image; try { image = await Photos.fromLibrary(); } catch (_) { return; }
+    const calibrated = bg.calibration[family];
+    const useCalibration = calibrated && calibrated.position === position && calibrated.width === image.size.width && calibrated.height === image.size.height;
+    L.assert(useCalibration || allowLegacy, "此尺寸、位置或截图分辨率尚未匹配本机校准，请使用本机自动校准，避免套旧尺寸错位");
+    const choices = useCalibration ? [] : InfoWidgetGeometry.options(image.size);
+    let variant = choices[0]?.key;
+    if (choices.length > 1) {
+      const choice = await choose(image.size.height === 2436 ? "选择 iPhone 型号" : "桌面图标大小", choices.map(item => item.label), "请与当前桌面设置一致，组件宽高和位置会自动匹配。");
+      if (choice < 0) return;
+      variant = choices[choice].key;
+    }
+    const rect = useCalibration ? L.cropRect(calibrated.rect, image.size) : InfoWidgetGeometry.rect(image.size, family, position, variant);
+    if (!await confirmEmptyWallpaper()) return;
+    const name = `transparent-${uuid()}.png`;
+    bg.mode = "transparent"; bg.transparent[family] = name;
+    saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
+    const check = backgroundFor(read("settings").data, family);
+    L.assert(check.image && !check.warning, check.warning || "背景读回失败，请重试");
+    await presentPreview("dashboard", family);
+  }
+  async function adjustBackground() {
+    while (true) {
+      const settings = editable("settings"), bg = settings.background;
+      const action = await choose("背景调整", [`文字：${bg.text === "light" ? "白色" : "深色"}（点击切换）`, `相册遮罩：${Math.round(bg.dim * 100)}%`], "透明背景保留原图，不加遮罩。");
+      if (action < 0) return;
+      if (action === 0) { bg.text = bg.text === "light" ? "dark" : "light"; write("settings", settings); continue; }
+      const input = await fields("图片暗色遮罩", [["0—80，百分比", String(Math.round(bg.dim * 100))]]); if (!input) continue;
+      L.assert(input[0] !== "" && Number.isFinite(Number(input[0])) && Number(input[0]) >= 0 && Number(input[0]) <= 80, "请填写 0—80 的数字");
+      bg.dim = Number(input[0]) / 100;
+      if (bg.photo) {
+        const image = fm.readImage(backgroundPath(bg.photo)), name = `photo-${uuid()}.png`;
+        bg.photo = name;
+        saveBackground(settings, [[name, image], ...["small", "medium", "large"].map(family => [photoFile(name, family), photoInfoImage(image, family, bg.dim)])]);
+      } else write("settings", settings);
+    }
+  }
+  async function advancedBackground() {
+    const action = await choose("背景高级选项", ["本机自动校准", "使用已测量布局（iPhone 17 大号顶部）", "尝试旧系统尺寸表", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片"], "旧尺寸表仅适用于对应桌面布局，未对齐时使用本机校准。恢复主题不会删除已保存图片。");
+    if (action < 0) return;
+    if (action === 0) return await calibrationMenu();
+    if (action === 1) return await useMeasuredIphone17Background();
+    if (action === 2) return await makeTransparentBackground(true);
+    const settings = editable("settings"), bg = settings.background;
+    if (action === 3) bg.mode = "theme";
+    if (action === 4) { L.assert(Object.values(bg.transparent).some(Boolean), "请先制作透明背景"); bg.mode = "transparent"; }
+    if (action === 5) { L.assert(bg.photo, "请先选择相册图片"); bg.mode = "photo"; }
+    write("settings", settings);
   }
   async function backgroundMenu() {
     while (true) {
       const settings = editable("settings"), bg = settings.background;
-      const savedSizes = ["large", "medium", "small"].map((family, i) => `${["大号", "中号", "小号"][i]}：${bg.transparent[family] ? "已保存" : "未设置"}`).join("、");
-      const action = await choose("组件背景", ["制作透明背景（自动裁剪）", "选择相册图片背景", "设置图片上的文字颜色", "设置图片暗色遮罩", "恢复主题背景", "使用已保存的透明背景", "使用已保存的相册图片", "检查背景并预览", "本机自动校准（新系统 / 未对齐）", "使用已测量布局（iPhone 17 大号顶部）"],
-        `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。透明背景${savedSizes}。iPhone 17 可选已测量布局，无需紫色校准。其他未对齐布局使用本机自动校准。默认/紧凑共用背景。`);
+      const action = await choose("组件背景", ["制作透明背景", "选择相册图片", "调整文字与遮罩", "预览当前背景", "高级选项"], `当前：${{ theme: "主题背景", photo: "图片背景", transparent: "透明背景" }[bg.mode]}。预览尺寸：${{large:"大号",medium:"中号",small:"小号"}[appPreviewFamily]}。制作成功后直接预览，新系统优先使用本机校准。`);
       if (action < 0) return;
-      if (action === 0) {
-        let allowLegacy = parseInt(Device.systemVersion?.() || "0", 10) < 26;
-        if (parseInt(Device.systemVersion?.() || "0", 10) >= 26 && !Object.values(bg.calibration).some(Boolean)) {
-          const method = await choose("新系统桌面布局", ["本机自动校准（推荐）", "尝试旧系统尺寸表"], "相同屏幕分辨率不代表组件边界相同。iOS 26 及更新版本请优先从本机截图测量，避免壁纸缩放错位。");
-          if (method < 0) continue;
-          if (method === 0) { await calibrationMenu(); continue; }
-          allowLegacy = true;
-        }
-        const proceed = await choose("准备桌面截图", ["已有截图，继续"], "长按桌面进入编辑模式，滑到空白页并截图（同一壁纸、缩放和图标大小）。使用本机完整截图，不要预先裁剪。按内置尺寸自动处理；换位置或壁纸后需重做。负一屏请使用图片背景。");
-        if (proceed < 0) continue;
-        const size = await choose("透明背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
-        const family = ["large", "medium", "small"][size];
-        const positions = backgroundPositions(family);
-        const position = await choose("组件在桌面的位置", positions, "根据位置自动裁剪，大号底部从中间一行开始。"); if (position < 0) continue;
-        let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
-        const calibrated = bg.calibration[family];
-        const useCalibration = calibrated && calibrated.position === position && calibrated.width === image.size.width && calibrated.height === image.size.height;
-        L.assert(useCalibration || allowLegacy, "此尺寸、位置或截图分辨率尚未匹配本机校准，请使用本机自动校准，避免套旧尺寸错位");
-        const choices = useCalibration ? [] : InfoWidgetGeometry.options(image.size);
-        let variant = choices[0]?.key;
-        if (choices.length > 1) {
-          const choice = await choose(image.size.height === 2436 ? "选择 iPhone 型号" : "桌面图标大小", choices.map(item => item.label), "请与当前桌面设置一致，组件宽高和位置会自动匹配。");
-          if (choice < 0) continue;
-          variant = choices[choice].key;
-        }
-        const rect = useCalibration ? L.cropRect(calibrated.rect, image.size) : InfoWidgetGeometry.rect(image.size, family, position, variant);
-        if (!await confirmEmptyWallpaper()) continue;
-        const name = `transparent-${uuid()}.png`;
-        bg.mode = "transparent"; bg.transparent[family] = name;
-        saveBackground(settings, [[name, cropInfoImage(image, rect)]]);
-        const check = backgroundFor(read("settings").data, family);
-        L.assert(check.image && !check.warning, check.warning || "背景读回失败，请重试");
-        await notify("透明背景已保存并校验", `已自动裁剪${["大号", "中号", "小号"][size]}背景，即将打开预览。看完点左上角 Close（关闭）返回，不是卡住。将组件放到所选位置；其他尺寸需分别设置。透明背景不叠加遮罩。`);
-        await presentPreview("dashboard", family);
-      }
+      if (action === 0) await makeTransparentBackground();
       if (action === 1) {
         let image; try { image = await Photos.fromLibrary(); } catch (_) { continue; }
-        const name = `photo-${uuid()}.png`;
-        bg.mode = "photo"; bg.photo = name;
+        const name = `photo-${uuid()}.png`; bg.mode = "photo"; bg.photo = name;
         saveBackground(settings, [[name, image], ...["small", "medium", "large"].map(family => [photoFile(name, family), photoInfoImage(image, family, bg.dim)])]);
-        await notify("图片背景已保存", "三个尺寸均已生成居中裁剪背景。可调整文字颜色和暗色遮罩，然后预览组件。");
+        await presentPreview("dashboard", appPreviewFamily);
       }
-      if (action === 2) {
-        const color = await choose("背景文字颜色", ["白色（适合深色壁纸）", "深色（适合浅色壁纸）"]);
-        if (color >= 0) { bg.text = ["light", "dark"][color]; write("settings", settings); }
-      }
-      if (action === 3) {
-        const input = await fields("图片暗色遮罩", [["0—80，百分比", String(Math.round(bg.dim * 100))]], "仅用于相册图片。透明背景保持原图，不叠加遮罩。");
-        if (!input) continue;
-        L.assert(input[0] !== "" && Number.isFinite(Number(input[0])) && Number(input[0]) >= 0 && Number(input[0]) <= 80, "请填写 0—80 的数字");
-        bg.dim = Number(input[0]) / 100;
-        if (bg.photo) {
-          const image = fm.readImage(backgroundPath(bg.photo)), name = `photo-${uuid()}.png`;
-          bg.photo = name;
-          saveBackground(settings, [[name, image], ...["small", "medium", "large"].map(family => [photoFile(name, family), photoInfoImage(image, family, bg.dim)])]);
-        } else write("settings", settings);
-      }
-      if (action === 4) { bg.mode = "theme"; write("settings", settings); }
-      if (action === 5) { L.assert(Object.values(bg.transparent).some(Boolean), "请先制作至少一个尺寸的透明背景"); bg.mode = "transparent"; write("settings", settings); }
-      if (action === 6) { L.assert(bg.photo, "请先选择相册图片"); bg.mode = "photo"; write("settings", settings); }
-      if (action === 7) {
-        const size = await choose("检查背景尺寸", ["大号", "中号", "小号"]); if (size < 0) continue;
-        const family = ["large", "medium", "small"][size], state = backgroundFor(settings, family);
-        await notify("背景检查", state.warning || (state.image ? `当前${["大号", "中号", "小号"][size]}背景可读取，图片尺寸 ${state.image.size.width}×${state.image.size.height}。即将预览。` : "当前使用主题纯色背景。请先选择制作透明背景或使用已保存的透明背景。"));
-        await presentPreview("dashboard", family);
-      }
-      if (action === 8) await calibrationMenu();
-      if (action === 9) await useMeasuredIphone17Background();
+      if (action === 2) await adjustBackground();
+      if (action === 3) await preview("dashboard");
+      if (action === 4) await advancedBackground();
     }
   }
   function palette(theme) {
@@ -494,12 +483,12 @@ function createInfoSuite() {
     const parameter = scripts[runningKind] + (runningKind === "dashboard" ? `|${activeProfile}` : "");
     return `scriptable:///run?scriptName=${encodeURIComponent(Script.name())}&remoteScript=${encodeURIComponent(parameter)}&infoAction=${encodeURIComponent(action)}`;
   }
-  function section(key, settings, now = new Date()) {
+  function section(key, settings, now = new Date(), group = null) {
     const state = read(key), data = state.data; let rows = [], hint = state.warning;
     const providers = {
       parcels: value => L.parcels(value).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · "), kind: "parcel", code: p.code, company: p.company, station: p.station })),
       trains: value => L.trains(value, now.getTime()).map(t => ({ main: `${t.date.slice(5).replace("-", "/")} ${t.from}→${t.to}`, detail: `${t.number} · ${t.time} · ${t.seat || "座位未填"}`, lines: 2 })),
-      countdowns: value => L.countdowns(value, now).map(e => ({ main: `${e.name}：${L.dayText(e.days)}`, detail: e.date, kind: "countdown", name: e.name, days: e.days })),
+      countdowns: value => (group ? L.countdownGroups(value, now)[group] : L.countdowns(value, now)).map(e => ({ main: `${L.countdownCaption(e)}：${L.dayText(e.days)}`, detail: `${L.countdownType(e)} · ${e.nextDate}`, kind: "countdown", name: e.name, age: e.age, days: e.days })),
     };
     if (providers[key]) rows = providers[key](data);
     if (key === "calendar") {
@@ -516,7 +505,14 @@ function createInfoSuite() {
       }
     }
     if (hint) rows = [{ main: hint, detail: "", status: true }, ...rows];
-    return { id: key, title: labels[key], count: key === "parcels" ? L.parcels(data).length : rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: 20 };
+    return { id: key, group, title: group === "birthdays" ? "生日" : group === "other" ? "其他倒计时" : labels[key], count: key === "parcels" ? L.parcels(data).length : rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: key === "countdowns" ? 3 : 20 };
+  }
+  function displaySections(key, settings, now = new Date()) {
+    if (key !== "countdowns") return [section(key, settings, now)];
+    const groups = ["birthdays", "other"].map(group => section(key, settings, now, group));
+    // 空分组不占据展示空间，记录仍保留在共用管理菜单中。
+    const visible = groups.filter(group => group.rows.length);
+    return visible.length ? visible : [groups[1]];
   }
   function addText(stack, value, font, color) {
     const text = stack.addText(value); text.font = font; text.textColor = color;
@@ -548,8 +544,8 @@ function createInfoSuite() {
     const settingsState = read("settings"), settings = settingsState.data, colors = palette(settings.theme);
     if (kind === "dashboard" && supported) {
       const profile = settings.profiles[activeProfile];
-      const sections = profile.modules.filter(m => m.enabled).map(module => {
-        try { return { ...section(module.id, settings), maxItems: module.maxItems }; }
+      const sections = profile.modules.filter(m => m.enabled).flatMap(module => {
+        try { return displaySections(module.id, settings).map(s => ({ ...s, maxItems: module.id === "countdowns" ? Math.min(3, module.maxItems) : module.maxItems })); }
         catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "", status: true }], maxItems: 1, warning: true }; }
       }).filter(s => !profile.hideEmpty || s.rows.length || s.warning)
         .map(s => s.rows.length ? s : { ...s, rows: [{ main: "暂无记录", detail: "", status: true }] });
@@ -564,7 +560,7 @@ function createInfoSuite() {
     widget.addSpacer(6);
     if (!supported) { addText(widget, "请选择桌面小号、中号或大号组件", Font.systemFont(12), colors.secondary); return widget; }
     if (settingsState.warning) { addText(widget, "配置损坏，使用默认或有效快照", Font.systemFont(10), colors.secondary); widget.addSpacer(3); }
-    const sections = [section(kind, settings, now)];
+    const sections = displaySections(kind, settings, now);
     if (!sections.length || (sections.length === 1 && !sections[0].rows.length)) {
       addText(widget, "暂无信息，点击组件管理数据", Font.systemFont(12), colors.secondary); widget.addSpacer(); return widget;
     }
@@ -582,9 +578,10 @@ function createInfoSuite() {
     if (layout.omittedModules) { widget.addSpacer(3); addText(widget, `另有 ${layout.omittedModules} 个模块 · 大号显示更多`, Font.systemFont(9), colors.secondary); }
     widget.addSpacer(); return widget;
   }
-  async function preview(kind) {
-    const size = await choose("预览尺寸", ["大号", "中号", "小号"], "预览打开后，点左上角 Close（关闭）返回菜单。"); if (size < 0) return;
-    await presentPreview(kind, ["large", "medium", "small"][size]);
+  async function preview(kind) { await presentPreview(kind, appPreviewFamily); }
+  async function changePreviewSize() {
+    const size = await choose("切换预览尺寸", ["大号", "中号", "小号"]);
+    if (size >= 0) await presentPreview("dashboard", ["large", "medium", "small"][size]);
   }
   async function presentPreview(kind, family) {
     appPreviewFamily = family;
@@ -594,17 +591,17 @@ function createInfoSuite() {
   }
   async function dashboardMenu() {
     while (true) {
-      const action = await choose("信息聚合面板", ["预览聚合组件", "管理快递", "管理火车票", "管理倒计时", "选择显示模块 / 条数", "调整显示顺序", "修改组件主题", "数据备份与恢复", "日历授权与缓存", "切换预览配置（默认/紧凑）", "设置组件背景（透明/图片）"], `当前预览配置：${activeProfile === "default" ? "默认" : "紧凑"}`);
+      const action = await choose("信息聚合面板", ["预览聚合组件", "管理快递", "管理火车票", "管理倒计时", "模块设置（显示 / 条数 / 顺序）", "切换预览尺寸", "修改组件主题", "数据备份与恢复", "日历授权与缓存", "切换预览配置（默认/紧凑）", "设置组件背景（透明/图片）"], `当前预览配置：${activeProfile === "default" ? "默认" : "紧凑"}`);
       if (action < 0) return;
       await guarded(async () => {
         if (action === 0) await preview("dashboard");
         if (action >= 1 && action <= 3) await manage(["parcels", "trains", "countdowns"][action - 1]);
-        if (action === 4) await configureModules(false);
-        if (action === 5) await configureModules(true);
+        if (action === 4) await configureModules();
+        if (action === 5) await changePreviewSize();
         if (action === 6) await themeMenu();
         if (action === 7) await backupMenu();
         if (action === 8) await calendarMenu();
-        if (action === 9) { const profile = await selectProfile(); if (profile) activeProfile = profile; }
+        if (action === 9) activeProfile = activeProfile === "default" ? "compact" : "default";
         if (action === 10) await backgroundMenu();
       });
     }
@@ -622,7 +619,7 @@ function createInfoSuite() {
     if (!items.length) return true;
     const data = editable("parcels"); data.items = L.mergeItems(data.items, items);
     if (await confirm(`添加 ${items.length} 条快递？`, "信息来自快捷指令/URL。确认后仅保存到当前设备，不会发送到 GitHub。")) {
-      write("parcels", data); await notify("快递已保存", `已添加 ${items.length} 条待取快递。`);
+      write("parcels", data);
     }
     return true;
   }

@@ -34,6 +34,65 @@ const InfoLogic = (() => {
     return Math.round((Date.UTC(parts[0], parts[1] - 1, parts[2])
       - Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
   }
+  // 1900—2100 农历年表，由 Node/ICU 中国历生成；手机运行不依赖 Intl 或网络。
+  const lunarYears = [0x4bd8,0x4ae0,0xa570,0x54d5,0xd260,0xd950,0x16554,0x56a0,0x9ad0,0x55d2,0x4ae0,0xa5b6,0xa4d0,0xd250,0x1d255,0xb540,0xd6a0,0x18da3,0x95b0,0x14977,0x4970,0xa4b0,0x1b0b6,0x6a50,0x6d40,0x1ab54,0x2b60,0x9570,0x52f2,0x4970,0x6566,0xd4a0,0xea50,0x16a95,0x5ad0,0x2b60,0x186e3,0x92e0,0x1c8d7,0xc950,0xd4a0,0x1d8a6,0xb550,0x56a0,0x1a5b4,0x25d0,0x92d0,0xd2b2,0xa950,0xb557,0x6ca0,0xb550,0x15355,0x4db0,0x25b0,0x18573,0x52b0,0xa9a8,0xe950,0x6aa0,0xaea6,0xab50,0x4b60,0xaae4,0xa570,0x5260,0xf263,0xd950,0x5b57,0x56a0,0x96d0,0x4dd5,0x4ad0,0xa4d0,0xd4d4,0xd250,0xd558,0xb540,0xb6a0,0x195a6,0x95b0,0x49b0,0xa974,0xa4b0,0xb27a,0x6a50,0x6d40,0x1ad47,0xab60,0x9570,0x4af5,0x4970,0x64b0,0x74a3,0xea50,0x6b58,0x5ac0,0xab60,0x96e5,0x92e0,0xc960,0xd954,0xd4a0,0xda50,0x7552,0x56a0,0xabb7,0x25d0,0x92d0,0xcab5,0xa950,0xb4a0,0xbca4,0xad50,0x55d9,0x4ba0,0xa5b0,0x15176,0x5270,0xa930,0x7954,0x6aa0,0xad50,0x5b52,0x4b60,0xa6e6,0xa4f0,0x5260,0xea65,0xd520,0xdaa0,0x76a3,0x96d0,0x4afb,0x4ad0,0xa4d0,0x1d0b6,0xd250,0xd520,0xdd45,0xb5a0,0x56d0,0x55b2,0x49b0,0xa577,0xa4b0,0xaa50,0x1b255,0x6d20,0xada0,0x14b63,0x9370,0x49f8,0x4970,0x64b0,0x168a6,0xea50,0x6b20,0x1a6c4,0xaae0,0x92e0,0xd2e3,0xc960,0xd557,0xd4a0,0xda50,0x5d55,0x56a0,0xa6d0,0x55d4,0x92d0,0xa9b8,0xa950,0xb4a0,0xb6a6,0xad50,0x55a0,0xaba4,0xa5b0,0x52b0,0xb273,0x6930,0x7337,0x6aa0,0xad50,0x14b55,0x4b60,0xa570,0x54e4,0xd160,0xe968,0xd520,0xdaa0,0x16aa6,0x56d0,0x4ae0,0xa9d4,0xa2d0,0xd150,0xf252,0xd520];
+  const pad = n => String(n).padStart(2, "0");
+  const dateString = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+  function lunarMonths(year) {
+    assert(Number.isInteger(year) && year >= 1900 && year <= 2100, "农历年份须为 1900—2100");
+    const bits = lunarYears[year - 1900], leap = bits & 15, months = [];
+    for (let month = 1; month <= 12; month++) {
+      months.push({ month, leap: false, days: bits & (0x10000 >> month) ? 30 : 29 });
+      if (month === leap) months.push({ month, leap: true, days: bits & 0x10000 ? 30 : 29 });
+    }
+    return months;
+  }
+  function lunarToSolar(year, month, day, leap = false, clamp = false) {
+    const months = lunarMonths(year), index = months.findIndex(m => m.month === month && m.leap === leap);
+    assert(index >= 0 && Number.isInteger(day) && day >= 1 && day <= (clamp ? 30 : months[index].days), "农历日期或闰月无效");
+    let offset = 0;
+    for (let y = 1900; y < year; y++) offset += lunarMonths(y).reduce((n, m) => n + m.days, 0);
+    offset += months.slice(0, index).reduce((n, m) => n + m.days, 0) + Math.min(day, months[index].days) - 1;
+    const date = new Date(Date.UTC(1900, 0, 31) + offset * 86400000);
+    return dateString(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
+  }
+  function birthdayParts(event) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(event.date);
+    assert(match, "出生日期须为 YYYY-MM-DD");
+    const [year, month, day] = match.slice(1).map(Number);
+    if (event.calendar === "lunar") lunarToSolar(year, month, day, event.leapMonth === true);
+    else assert(dateParts(event.date), "出生日期无效");
+    return [year, month, day];
+  }
+  function countdownEvent(event, now = new Date()) {
+    if (!event.calendar || event.calendar === "once") return { ...event, nextDate: event.date, days: daysUntil(event.date, now) };
+    const [birthYear, month, day] = birthdayParts(event);
+    let nextDate;
+    // 农历腊月可能落在下一阳历年，必须从上一农历年开始查找。
+    for (let year = Math.max(birthYear, now.getFullYear() - (event.calendar === "lunar" ? 1 : 0)); year <= (event.calendar === "lunar" ? 2100 : 9999); year++) {
+      if (event.calendar === "lunar") {
+        const leap = event.leapMonth === true && lunarMonths(year).some(m => m.month === month && m.leap);
+        nextDate = lunarToSolar(year, month, day, leap, true);
+      } else {
+        const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+        nextDate = dateString(year, month, Math.min(day, last));
+      }
+      if (daysUntil(nextDate, now) >= 0) break;
+      nextDate = null;
+    }
+    assert(nextDate, "下一次生日超出支持年份");
+    return { ...event, nextDate, days: daysUntil(nextDate, now), age: Math.max(0, now.getFullYear() - birthYear) };
+  }
+  function countdownCaption(event) {
+    return event.age === undefined ? event.name : `${event.name} · 今年满 ${event.age} 岁`;
+  }
+  function countdownInput(value = "普通") {
+    const types = { "普通": ["once", false], "其他": ["once", false], "阳历": ["solar", false], "农历": ["lunar", false], "闰月农历": ["lunar", true] };
+    assert(own(types, value), "类型请填：其他、阳历、农历或闰月农历");
+    const [calendar, leapMonth] = types[value]; return { calendar, leapMonth };
+  }
+  const isBirthday = event => event.calendar === "solar" || event.calendar === "lunar";
+  const countdownType = event => event?.calendar === "solar" ? "阳历" : event?.calendar === "lunar" ? (event.leapMonth ? "闰月农历" : "农历") : "其他";
   const dayText = days => days > 0 ? `还有 ${days} 天` : days === 0 ? "就是今天" : `已过 ${-days} 天`;
   function iso(value, label) {
     const text = str(value, label, true);
@@ -69,7 +128,7 @@ const InfoLogic = (() => {
     return items;
   }
   function defaults() {
-    const modules = moduleIds.map(id => ({ id, enabled: id !== "calendar", maxItems: id === "parcels" ? 3 : 2 }));
+    const modules = moduleIds.map(id => ({ id, enabled: id !== "calendar", maxItems: id === "parcels" || id === "countdowns" ? 3 : 2 }));
     return { version: 1, theme: { mode: "system", accent: "#007AFF" }, background: backgroundDefaults(),
       profiles: { default: { modules, hideEmpty: true }, compact: { modules: modules.map(m => ({ ...m, maxItems: 1 })), hideEmpty: true } },
       calendar: { enabled: false, days: 7 } };
@@ -111,7 +170,16 @@ const InfoLogic = (() => {
         assert(event && typeof event === "object", "倒计时格式无效");
         const result = { id: str(event.id, "事件 ID", true), name: str(event.name, "事件名称", true),
           date: str(event.date, "事件日期", true), text: str(event.text, "显示文案") };
-        assert(dateParts(result.date) && !names.has(result.name), "倒计时日期无效或名称重复");
+        if (event.calendar !== undefined) {
+          assert(["once", "solar", "lunar"].includes(event.calendar), "生日历法无效");
+          assert(event.leapMonth === undefined || typeof event.leapMonth === "boolean", "闰月标记须为布尔值");
+          assert(!event.leapMonth || event.calendar === "lunar", "只有农历生日可选择闰月");
+          result.calendar = event.calendar;
+          result.leapMonth = event.leapMonth === true;
+        }
+        if (result.calendar && result.calendar !== "once") birthdayParts(result);
+        else assert(dateParts(result.date), "倒计时日期无效");
+        assert(!names.has(result.name), "事件名称重复");
         names.add(result.name); return result;
       }));
       return { events, defaultId: events.some(e => e.id === input.defaultId) ? input.defaultId : events[0]?.id || null };
@@ -169,8 +237,17 @@ const InfoLogic = (() => {
       .sort((a, b) => instant(a.date, a.time, a.offset) - instant(b.date, b.time, b.offset));
   }
   function countdowns(data, now = new Date()) {
-    return data.events.map(event => ({ ...event, days: daysUntil(event.date, now) }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    return data.events.map(event => countdownEvent(event, now))
+      .sort((a, b) => a.nextDate.localeCompare(b.nextDate) || a.name.localeCompare(b.name));
+  }
+  function countdownGroups(data, now = new Date()) {
+    const items = countdowns(data, now);
+    return { birthdays: items.filter(isBirthday),
+      other: items.filter(event => !isBirthday(event)).sort((a, b) => {
+        // 今天及未来事件优先，过期事件留在末尾，最近过期的排在前面。
+        if ((a.days < 0) !== (b.days < 0)) return a.days < 0 ? 1 : -1;
+        return Math.abs(a.days) - Math.abs(b.days) || a.name.localeCompare(b.name);
+      }) };
   }
   function importItems(key, input, uuid, now) {
     const array = Array.isArray(input) ? input : input?.items;
@@ -270,6 +347,6 @@ const InfoLogic = (() => {
     return { plans, metrics, used, omittedModules: sections.length - plans.length };
   }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
-    validate, empty, defaults, parcels, trains, countdowns, importItems, mergeItems, validateBackup,
+    validate, empty, defaults, parcels, trains, countdowns, countdownGroups, isBirthday, countdownEvent, countdownCaption, countdownInput, countdownType, lunarToSolar, importItems, mergeItems, validateBackup,
     truncate, metrics, planLayout, planDashboard, moduleIds, backgroundDefaults, validateBackground, cropRect };
 })();

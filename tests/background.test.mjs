@@ -31,7 +31,7 @@ test("所有内置截图尺寸、布局和位置均满足裁剪边界；未知�
   assert.throws(()=>G.rect({width:1290,height:2796},"large",2,"text"), /位置无效/);
 });
 test("相册设置一次生成三个背景，Widget 离线直接读取且不覆盖数据", async () => {
-  const h = harness({ app: true, files: { [dataPath("parcels")]: JSON.stringify({ version: 1, items: [parcel()] }) }, responses: [10, 1, 0, -1, -1] });
+  const h = harness({ app: true, files: { [dataPath("parcels")]: JSON.stringify({ version: 1, items: [parcel()] }) }, responses: [10, 1, -1, -1] });
   await h.suite.run("dashboard");
   const settings = h.suite.read("settings").data; assert.equal(settings.background.mode, "photo");
   assert.equal([...h.files.keys()].filter(p => p.endsWith(".png")).length, 4);
@@ -43,12 +43,12 @@ test("相册设置一次生成三个背景，Widget 离线直接读取且不覆�
   }
 });
 test("透明截图按尺寸保存，原像素裁剪不加遮罩且其他尺寸的背景保留", async () => {
-  let h = harness({ app: true, responses: [10, 0, 0, 0, 0, 0, 0, -1, -1] }); await h.suite.run("dashboard");
+  let h = harness({ app: true, responses: [10, 0, 0, 0, 0, -1, -1] }); await h.suite.run("dashboard");
   const initial = h.suite.read("settings").data.background.transparent.large;
   assert.ok(initial); assert.equal(h.drawings.length, 1); assert.equal(h.drawings[0].respectScreenScale, false);
   assert.deepEqual(plain(h.drawings[0].operations[0].point), { x: -78, y: -231 });
   assert.equal(h.webviews.length, 0); assert.equal(h.previews[0].family, "large"); assert.ok(h.previews[0].widget.backgroundImage);
-  h = harness({ app: true, files: Object.fromEntries(h.files), responses: [10, 0, 0, 1, 1, 0, 0, -1, -1] }); await h.suite.run("dashboard");
+  h = harness({ app: true, files: Object.fromEntries(h.files), responses: [10, 0, 1, 1, 0, -1, -1] }); await h.suite.run("dashboard");
   assert.equal(h.previews[0].family, "medium"); assert.ok(h.rendered.backgroundImage);
   assert.equal(h.suite.read("settings").data.background.transparent.large, initial);
   assert.ok(h.suite.read("settings").data.background.transparent.medium);
@@ -56,7 +56,7 @@ test("透明截图按尺寸保存，原像素裁剪不加遮罩且其他尺寸�
 });
 test("原生自动裁剪直接保存大号，两种图标布局立即预览，不依赖网页完成按钮", async () => {
   for (const choice of [0, 1]) {
-    const h = harness({ app: true, image: {size:{width:1290,height:2796}}, responses: [10,0,0,0,1,choice,0,0,-1,-1] });
+    const h = harness({ app: true, image: {size:{width:1290,height:2796}}, responses: [10,0,0,1,choice,0,-1,-1] });
     await h.suite.run("dashboard");
     const bg = h.suite.read("settings").data.background;
     assert.equal(bg.mode, "transparent"); assert.ok(bg.transparent.large);
@@ -67,7 +67,7 @@ test("原生自动裁剪直接保存大号，两种图标布局立即预览，�
   }
 });
 test("静默丢失图片写入时不会提示保存成功，也不修改原配置", async () => {
-  const h = harness({ app:true, dropImageWrite:true, responses:[10,0,0,0,0,0,0,-1] });
+  const h = harness({ app:true, dropImageWrite:true, responses:[10,0,0,0,0,0,-1] });
   await h.suite.run("dashboard");
   assert.equal(h.suite.read("settings").data.background.mode,"theme");
   assert.equal(h.dialogs.some(d=>d.title==="透明背景已保存并校验"),false);
@@ -76,20 +76,20 @@ test("静默丢失图片写入时不会提示保存成功，也不修改原配�
 test("检查背景针对所选尺寸明确提示并预览，保留旧版已存透明图片", async () => {
   const settings=plain(harness().logic.defaults()); settings.background.mode="transparent"; settings.background.transparent.large="transparent-old.png";
   const files={ [dataPath("settings")]:JSON.stringify(settings), "/docs/scriptable-info-data/backgrounds/transparent-old.png":{size:{width:1014,height:1062}} };
-  const h=harness({app:true,files,responses:[10,7,0,0,-1,-1]}); await h.suite.run("dashboard");
-  assert.match(h.dialogs.find(d=>d.title==="背景检查").message,/可读取/); assert.ok(h.previews[0].widget.backgroundImage);
-  const missing=harness({app:true,files,responses:[10,7,1,0,-1,-1]}); await missing.suite.run("dashboard");
-  assert.match(missing.dialogs.find(d=>d.title==="背景检查").message,/设置中号背景/);
+  const h=harness({app:true,files,responses:[10,3,-1,-1]}); await h.suite.run("dashboard");
+  assert.equal(h.dialogs.some(d=>d.title==="背景检查"),false); assert.ok(h.previews[0].widget.backgroundImage);
+  const missing=harness({app:true,files,responses:[5,1,10,3,-1,-1]}); await missing.suite.run("dashboard");
+  assert.match(missing.text(),/背景/);
   assert.equal(missing.previews[0].widget.backgroundImage,undefined);
 });
 test("取消选图或布局选项不写入配置或图片", async () => {
-  for (const options of [{ cancelPhoto: true, responses: [10, 1, -1, -1] }, { image: {size:{width:1290,height:2796}}, responses: [10, 0, 0, 0, 0, -1, -1, -1] }]) {
+  for (const options of [{ cancelPhoto: true, responses: [10, 1, -1, -1] }, { image: {size:{width:1290,height:2796}}, responses: [10, 0, 0, 0, -1, -1, -1] }]) {
     const h = harness({ app: true, ...options }); await h.suite.run("dashboard");
     assert.equal(h.files.has(dataPath("settings")), false); assert.equal([...h.files.keys()].some(p => p.endsWith(".png")), false);
   }
 });
 test("裁剪无效和图片保存失败不覆盖旧背景或记录", async () => {
-  for (const options of [{ image: {size:{width:600,height:300}}, responses: [10, 0, 0, 0, 0, 0, -1] }, { failWrite: path => path.endsWith(".png"), responses: [10, 1, 0, -1] }, { failWrite: path => path.endsWith("dashboard.json.pending"), responses: [10, 1, 0, -1] }]) {
+  for (const options of [{ image: {size:{width:600,height:300}}, responses: [10, 0, 0, 0, 0, -1] }, { failWrite: path => path.endsWith(".png"), responses: [10, 1, 0, -1] }, { failWrite: path => path.endsWith("dashboard.json.pending"), responses: [10, 1, 0, -1] }]) {
     const h = harness({ app: true, ...options }); await h.suite.run("dashboard");
     assert.equal(h.suite.read("settings").data.background.mode, "theme"); assert.equal([...h.files.keys()].some(p => p.endsWith(".png")), false);
   }
@@ -102,18 +102,18 @@ test("图片丢失、损坏或未设置当前尺寸时回退主题并提示，�
   }
 });
 test("文字颜色、遮罩与恢复主题菜单保存，恢复主题不删除本地图片", async () => {
-  const h = harness({ app: true, responses: [10, 1, 0, 2, 1, 3, { action: 0, fields: ["40"] }, -1, -1] });
+  const h = harness({ app: true, responses: [10, 1, 2, 0, 1, { action: 0, fields: ["40"] }, -1, -1, -1] });
   await h.suite.run("dashboard"); const settings = h.suite.read("settings").data;
   assert.equal(settings.background.text, "dark"); assert.equal(settings.background.dim, 0.4);
   const widget = h.suite.render("dashboard", "large");
   assert.ok(widget.backgroundImage); assert.equal(widget.backgroundImage.operations.at(-1).color.alpha, 0.4);
   const texts = h.nodes.flatMap(n => n.children).filter(n => n.kind === "text"); assert.equal(texts.at(-1).textColor.value, "#17212B");
-  const restore = harness({ app: true, files: Object.fromEntries(h.files), responses: [10, 4, -1, -1] }); await restore.suite.run("dashboard");
+  const restore = harness({ app: true, files: Object.fromEntries(h.files), responses: [10, 4, 3, -1, -1] }); await restore.suite.run("dashboard");
   assert.equal(restore.suite.read("settings").data.background.mode, "theme"); assert.equal(restore.rendered.backgroundImage, undefined);
   assert.equal([...restore.files.keys()].filter(p => p.endsWith(".png")).length, 8);
 });
 test("远程更新保留背景 PNG 与配置，恢复旧 JSON 备份仍兼容", async () => {
-  const h = harness({ app: true, responses: [10, 1, 0, -1, -1] }); await h.suite.run("dashboard");
+  const h = harness({ app: true, responses: [10, 1, -1, -1] }); await h.suite.run("dashboard");
   const before = new Map([...h.files].filter(([p]) => p.endsWith(".png") || p === dataPath("settings")));
   const updated = harness({ app: true, files: { ...Object.fromEntries(h.files), [cachePath("dashboard")]: readFileSync(new URL("../scripts/dashboard.js", import.meta.url), "utf8") }, responses: [-1] });
   await updated.evaluate(readFileSync(new URL("../RemoteLauncher.js", import.meta.url), "utf8"));
@@ -129,12 +129,20 @@ test("用户提供截图的测量布局按两个轴换算边界，不套旧同�
 });
 test("已测量布局入口无需用户校准，保存大号背景并保留私人数据；尺寸不符拒绝", async () => {
   const privateData=JSON.stringify({version:1,items:[parcel()]});
-  const h=harness({app:true,systemVersion:"27.0",image:{size:{width:1206,height:2622}},files:{[dataPath("parcels")]:privateData},responses:[10,9,0,0,0,-1,-1]});
+  const h=harness({app:true,systemVersion:"27.0",image:{size:{width:1206,height:2622}},files:{[dataPath("parcels")]:privateData},responses:[10,4,1,0,0,-1,-1]});
   await h.suite.run("dashboard");
   const bg=h.suite.read("settings").data.background;
   assert.equal(bg.mode,"transparent");assert.deepEqual(plain(bg.calibration.large.rect),{x:78,y:270,width:1050,height:1094});
   assert.equal(h.webviews.length,0);assert.ok(h.previews[0].widget.backgroundImage);assert.equal(h.previews[0].family,"large");
   assert.equal(h.files.get(dataPath("parcels")),privateData);
-  const wrong=harness({app:true,systemVersion:"27.0",responses:[10,9,0,0,-1]});await wrong.suite.run("dashboard");
+  const wrong=harness({app:true,systemVersion:"27.0",responses:[10,4,1,0,0,-1,-1]});await wrong.suite.run("dashboard");
   assert.equal(wrong.suite.read("settings").data.background.mode,"theme");assert.equal(wrong.previews.length,0);
+});
+
+test("背景首页仅五个常用入口，高级操作可取消而不修改配置", async () => {
+  const h = harness({ app: true, responses: [10, 4, -1, -1, -1] });
+  await h.suite.run("dashboard");
+  assert.deepEqual(h.dialogs.find(d => d.title === "组件背景").actions, ["制作透明背景", "选择相册图片", "调整文字与遮罩", "预览当前背景", "高级选项"]);
+  assert.equal(h.dialogs.find(d => d.title === "背景高级选项").actions.length, 6);
+  assert.equal(h.files.has(dataPath("settings")), false);
 });

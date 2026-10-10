@@ -14,6 +14,17 @@ for (const [name, kind] of Object.entries(scripts)) {
     if (readFileSync(target, "utf8") !== source) throw new Error(`需要重新生成 ${name}.js`);
   } else writeFileSync(target, source);
 }
+const countdown = `// Variables used by Scriptable.
+// icon-color: blue; icon-glyph: calendar-alt;
+
+// 由 tools/build.mjs 生成；请修改 src/ 后重新生成。
+${readFileSync(resolve(root, "src/logic.js"), "utf8")}
+${readFileSync(resolve(root, "src/countdown.js"), "utf8")}`;
+new (Object.getPrototypeOf(async function () {}).constructor)(countdown);
+const countdownPath = resolve(root, "scripts/countdown.js");
+if (check) {
+  if (readFileSync(countdownPath, "utf8") !== countdown) throw new Error("需要重新生成 countdown.js");
+} else writeFileSync(countdownPath, countdown);
 // 为目录 API 被限流或无法访问的手机提供同域名 Raw 备用发现路径。
 const names = readdirSync(resolve(root, "scripts")).filter(name => /^[a-zA-Z0-9_-]+\.js$/.test(name))
   .map(name => name.slice(0, -3)).sort();
@@ -22,4 +33,4 @@ const manifestPath = resolve(root, "scripts/manifest.json");
 if (check) {
   if (readFileSync(manifestPath, "utf8") !== manifest) throw new Error("脚本清单与目录不一致，请重新生成");
 } else writeFileSync(manifestPath, manifest);
-console.log(check ? "独立脚本与清单一致，语法检查通过" : "已生成四个独立脚本及备用清单");
+console.log(check ? "独立脚本与清单一致，语法检查通过" : "已生成五个独立脚本及备用清单");

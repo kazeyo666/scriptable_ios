@@ -46,7 +46,13 @@ export function harness(options = {}) {
       dialogs.push(this);
       assert.ok(queue.length, `未预期的对话框：${this.title}`);
       const answer = queue.shift(); if (typeof answer === "number") return answer;
-      if (answer.fields) this.fields = answer.fields; return answer.action;
+      if (answer.fields) this.fields = answer.fields;
+      if (typeof answer.action === "string") {
+        const index = this.actions.indexOf(answer.action);
+        assert.ok(index >= 0, `${this.title} 没有操作：${answer.action}`);
+        return index;
+      }
+      return answer.action;
     }
     async presentSheet() { return this.next(); } async presentAlert() { return this.next(); }
   }
