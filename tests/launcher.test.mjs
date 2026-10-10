@@ -4,11 +4,11 @@ import { readFileSync } from "node:fs";
 import { harness, dataPath, parcel, cachePath } from "./helpers.mjs";
 const launcher = readFileSync(new URL("../入口.js", import.meta.url), "utf8");
 
-test("入口发现、缓存及安装全部五个脚本，私有数据不被覆盖", async () => {
+test("入口发现、缓存及安装全部四个脚本，私有数据不被覆盖", async () => {
   const privateData = JSON.stringify({ version: 1, items: [parcel()] });
   const h = harness({ parameter: "信息面板|compact", files: { [dataPath("parcels")]: privateData } });
   await h.evaluate(launcher); assert.match(h.text(), /0956/);
-  for (const name of ["倒计时", "快递", "火车票", "倒计时列表", "信息面板"]) {
+  for (const name of ["倒计时", "快递", "火车票", "信息面板"]) {
     assert.ok(h.files.has(`/docs/${name}.js`)); assert.ok(h.files.has(cachePath(name)));
   }
   assert.equal(h.files.get(dataPath("parcels")), privateData); assert.equal(h.dialogs.length, 0);
@@ -51,21 +51,21 @@ test("目录 API 不通时从 Raw 清单发现新增 信息面板", async () => 
   } });
   await h.evaluate(launcher);
   assert.ok(h.files.has("/docs/信息面板.js"));
-  assert.match(h.dialogs[0].message, /已安装 5 个脚本/);
+  assert.match(h.dialogs[0].message, /已安装 4 个脚本/);
   assert.match(h.dialogs[0].message, /信息面板/);
   assert.match(h.dialogs[0].message, /备用清单/);
 });
-test("目录和清单均不可用时仍尝试安装当前版本的五个组件", async () => {
+test("目录和清单均不可用时仍尝试安装当前版本的四个组件", async () => {
   const h = harness({ app: true, apiError: true, manifestError: true, responses: [-1] });
   await h.evaluate(launcher); assert.ok(h.files.has("/docs/信息面板.js"));
-  assert.match(h.dialogs[0].message, /已安装 5 个脚本/);
+  assert.match(h.dialogs[0].message, /已安装 4 个脚本/);
 });
 test("无效清单不允许路径穿越，写入失败明确列出脚本", async () => {
   const h = harness({ app: true, apiError: true, manifest: { version: 1, scripts: ["../secret"] }, responses: [-1],
     failWrite: path => path === "/docs/信息面板.js" });
   await h.evaluate(launcher);
   assert.equal(h.files.has("/docs/信息面板.js"), false);
-  assert.match(h.dialogs[0].message, /已安装 4 个脚本/);
+  assert.match(h.dialogs[0].message, /已安装 3 个脚本/);
   assert.match(h.dialogs[0].message, /安装失败：\n信息面板/);
   assert.equal(h.requests.some(url => url.includes("../secret")), false);
 });
@@ -76,10 +76,10 @@ test("中文脚本下载地址编码、入口参数和脚本清单均可使用",
   assert.ok(h.requests.some(url => url.includes(`${encodeURIComponent("信息面板")}.js`)));
   assert.equal(new URL(h.rendered.url).searchParams.get("remoteScript"), "信息面板|compact");
   const manifest = JSON.parse(readFileSync(new URL("../scripts/manifest.json", import.meta.url), "utf8"));
-  assert.deepEqual(manifest.scripts.sort(), ["倒计时", "倒计时列表", "信息面板", "快递", "火车票"].sort());
+  assert.deepEqual(manifest.scripts.sort(), ["倒计时", "信息面板", "快递", "火车票"].sort());
 });
 test("旧英文参数兼容中文脚本，旧英文离线缓存迁移但私人数据保留", async () => {
-  for (const [oldName, newName] of Object.entries({ countdown: "倒计时", "countdown-list": "倒计时列表", "parcel-list": "快递", "train-tickets": "火车票", dashboard: "信息面板" })) {
+  for (const [oldName, newName] of Object.entries({ countdown: "倒计时", "countdown-list": "倒计时", "倒计时列表": "倒计时", "parcel-list": "快递", "train-tickets": "火车票", dashboard: "信息面板" })) {
     const source = readFileSync(new URL(`../scripts/${newName}.js`, import.meta.url), "utf8");
     const privateData = JSON.stringify({ events: [{ id: "a", name: "生日", date: "2099-01-01", text: "旧生日记录" }], defaultId: "a" });
     const h = harness({ offline: true, parameter: oldName === "countdown" ? "countdown|生日" : oldName,

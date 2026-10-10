@@ -46,7 +46,7 @@ test("新增倒计时与原脚本共享同一路径、原格式可读取", async
   assert.equal(h.files.has("/docs/scriptable-info-data/countdowns.json"), false);
   const old = harness({ files: Object.fromEntries(h.files) });
   await old.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
-  assert.match(old.text(), /生日快乐/); assert.ok(old.complete);
+  assert.match(old.text(), /生日/); assert.ok(old.complete);
 });
 test("单个 JSON 文件损坏不影响其他模块，原文件保留并禁止写入", async () => {
   const h = harness({ files: { [dataPath("parcels")]: "{broken", [dataPath("trains")]: JSON.stringify({ version: 1, items: [train()], hideEnded: true }) } });
@@ -140,7 +140,7 @@ test("独立中号快递显示三条记录，单卡片不受双列宽度限制",
   assert.equal(h.nodes.some(node => node.size?.width === 120), false);
 });
 
-test("生日管理可保存农历和年龄，原单事件脚本读取相同数据", async () => {
+test("生日管理可保存农历和年龄，独立倒计时脚本读取相同数据", async () => {
   const h = harness({ app: true, responses: [1, 1, { action: 0, fields: ["中秋生日", "1996-08-15", ""] }, -1] });
   await h.suite.run("countdowns");
   const data = h.suite.read("countdowns").data;
@@ -151,9 +151,9 @@ test("生日管理可保存农历和年龄，原单事件脚本读取相同数�
   assert.match(old.text(), /今年满/); assert.match(old.text(), /农历/);
   assert.equal(old.requests.length, 0);
 });
-test("单事件管理编辑保留农历与闰月字段", async () => {
+test("合并后的倒计时管理编辑保留农历与闰月字段", async () => {
   const event = { id: "leap", name: "闰月生日", date: "2023-02-01", text: "", calendar: "lunar", leapMonth: true };
-  const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events: [event], defaultId: "leap" }) }, responses: [2, 0, 0, -1] });
+  const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events: [event], defaultId: "leap" }) }, responses: [3, 0, 0, -1] });
   await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
   const saved = JSON.parse(h.files.get(dataPath("countdowns"))).events[0];
   assert.equal(saved.calendar, "lunar"); assert.equal(saved.leapMonth, true);
@@ -194,7 +194,8 @@ for (const family of ["small", "medium", "large"]) {
       const h = harness({ family }), settings = h.logic.defaults();
       settings.profiles.default.modules.forEach(m => { m.enabled = m.id === "countdowns"; m.maxItems = 20; });
       h.suite.write("settings", settings); h.suite.write("countdowns", { events, defaultId: "b40" });
-      await h.suite.run(kind);
+      if (kind === "countdowns") await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
+      else await h.suite.run(kind);
       const text = h.text(), birthdays = text.match(/生辰\d+/g) || [], other = text.match(/到期\d+/g) || [];
       assert.ok(birthdays.length > 0 && birthdays.length <= 3);
       assert.deepEqual(birthdays, ["生辰10", "生辰20", "生辰30"].slice(0, birthdays.length));
@@ -272,7 +273,7 @@ test("编辑生日直接打开表单，取消修改类型不写入，明确选�
   const event = { id: "leap", name: "闰月生日", date: "2023-02-01", text: "", calendar: "lunar", leapMonth: true };
   const originalData = JSON.stringify({ events: [event], defaultId: "leap" });
   for (const original of [false, true]) {
-    const prefix = [original ? 2 : 3, action("编辑")];
+    const prefix = [3, action("编辑")];
     const cancelled = harness({ app: true, files: { [dataPath("countdowns")]: originalData }, responses: [...prefix,
       { action: "修改类型／历法", fields: ["未保存", "2023-02-01", ""] }, -1, -1, -1] });
     if (original) await cancelled.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
@@ -319,9 +320,9 @@ test("备份入口统一到面板首页，独立组件仍能导出备份", async
   assert.equal(JSON.parse(h.exported[0][0]).format, "scriptable-info-backup");
 });
 
-test("原单事件管理也直接分页列出记录，删除末页默认事件后保留有效默认", async () => {
+test("合并后的倒计时管理直接分页列出记录，删除末页默认事件后保留有效默认", async () => {
   const events = Array.from({ length: 16 }, (_, i) => ({ id: String(i), name: `事件${i}`, date: "2099-01-01", text: "" }));
-  const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events, defaultId: "15" }) }, responses: [action("下一页"), action("其他 · 事件15 · 2099-01-01（默认）"), action("删除"), 0, -1] });
+  const h = harness({ app: true, files: { [dataPath("countdowns")]: JSON.stringify({ events, defaultId: "15" }) }, responses: [action("下一页"), action("其他 · 事件15 · 2099-01-01"), action("删除"), 0, -1] });
   await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
   const saved = JSON.parse(h.files.get(dataPath("countdowns")));
   assert.equal(saved.events.length, 15); assert.equal(saved.defaultId, "0");
@@ -344,4 +345,27 @@ test("信息面板的倒计时入口直接添加事件，不再弹出类别菜�
   const link = new URL(h.rendered.url);
   assert.equal(link.searchParams.get("scriptName"), "信息面板");
   assert.equal(link.searchParams.get("remoteScript"), "信息面板|default");
+});
+
+
+test("统一倒计时保留指定事件参数，显示年龄并保留点击参数", async () => {
+  const events = [{ id: "b", name: "我的生日", date: "2000-08-15", text: "生日快乐", calendar: "lunar" }, { id: "o", name: "项目交付", date: "2099-01-01", text: "" }];
+  const original = JSON.stringify({ events, defaultId: "o" });
+  const h = harness({ parameter: "我的生日", files: { [dataPath("countdowns")]: original } });
+  await h.evaluate(readFileSync(new URL("../scripts/倒计时.js", import.meta.url), "utf8"));
+  assert.match(h.text(), /生日快乐/); assert.match(h.text(), new RegExp(`今年满 ${new Date().getFullYear() - 2000} 岁`));
+  assert.match(h.text(), /农历/); assert.doesNotMatch(h.text(), /项目交付/);
+  assert.equal(new URL(h.rendered.url).searchParams.get("remoteScript"), "倒计时|我的生日");
+  assert.equal(h.files.get(dataPath("countdowns")), original); assert.equal(h.requests.length, 0);
+});
+test("指定事件不存在时明确提示，不回退到默认事件", async () => {
+  const h = harness({ parameter: "已删除", files: { [dataPath("countdowns")]: JSON.stringify({ events: [{ id: "o", name: "交付", date: "2099-01-01", text: "" }], defaultId: "o" }) } });
+  await h.suite.run("countdowns");
+  assert.match(h.text(), /找不到事件/); assert.match(h.text(), /已删除/); assert.doesNotMatch(h.text(), /交付/);
+});
+test("指定事件读取损坏数据时保留原文件并提示异常", async () => {
+  const h = harness({ parameter: "生日", files: { [dataPath("countdowns")]: "{broken" } });
+  await h.suite.run("countdowns");
+  assert.equal(h.files.get(dataPath("countdowns")), "{broken");
+  assert.match(h.text(), /异常|损坏|错误/); assert.match(h.text(), /找不到事件/);
 });

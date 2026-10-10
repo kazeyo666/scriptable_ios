@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const body = ["src/logic.js", "src/widget-geometry.js", "src/background.js", "src/calibration.js", "src/dashboard.js", "src/runtime.js"].map(path => readFileSync(resolve(root, path), "utf8")).join("\n");
-const scripts = { "快递": "parcels", "火车票": "trains", "倒计时列表": "countdowns", "信息面板": "dashboard" };
+const scripts = { "快递": "parcels", "火车票": "trains", "倒计时": "countdowns", "信息面板": "dashboard" };
 const check = process.argv.includes("--check");
 for (const [name, kind] of Object.entries(scripts)) {
   const source = `// Variables used by Scriptable.\n// icon-color: blue; icon-glyph: th-large;\n\n// 由 tools/build.mjs 生成；请修改 src/ 后重新生成。独立运行，无外部模块依赖。\n${body}\nawait createInfoSuite().run(${JSON.stringify(kind)});\n`;
@@ -14,17 +14,6 @@ for (const [name, kind] of Object.entries(scripts)) {
     if (readFileSync(target, "utf8") !== source) throw new Error(`需要重新生成 ${name}.js`);
   } else writeFileSync(target, source);
 }
-const countdown = `// Variables used by Scriptable.
-// icon-color: blue; icon-glyph: calendar-alt;
-
-// 由 tools/build.mjs 生成；请修改 src/ 后重新生成。
-${readFileSync(resolve(root, "src/logic.js"), "utf8")}
-${readFileSync(resolve(root, "src/countdown.js"), "utf8")}`;
-new (Object.getPrototypeOf(async function () {}).constructor)(countdown);
-const countdownPath = resolve(root, "scripts/倒计时.js");
-if (check) {
-  if (readFileSync(countdownPath, "utf8") !== countdown) throw new Error("需要重新生成 倒计时.js");
-} else writeFileSync(countdownPath, countdown);
 // 为目录 API 被限流或无法访问的手机提供同域名 Raw 备用发现路径。
 const names = readdirSync(resolve(root, "scripts")).filter(name => /^[a-zA-Z0-9_\-\u3400-\u9fff]+\.js$/.test(name))
   .map(name => name.slice(0, -3)).sort();
@@ -33,4 +22,4 @@ const manifestPath = resolve(root, "scripts/manifest.json");
 if (check) {
   if (readFileSync(manifestPath, "utf8") !== manifest) throw new Error("脚本清单与目录不一致，请重新生成");
 } else writeFileSync(manifestPath, manifest);
-console.log(check ? "独立脚本与清单一致，语法检查通过" : "已生成五个独立脚本及备用清单");
+console.log(check ? "独立脚本与清单一致，语法检查通过" : "已生成四个独立脚本及备用清单");

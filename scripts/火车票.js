@@ -905,6 +905,7 @@ function createInfoSuite() {
   const nowISO = () => new Date().toISOString();
   let activeProfile = "default";
   let runningKind = "dashboard";
+  let countdownSelection = "";
   let appPreviewFamily = ["small", "medium", "large"].includes(config.widgetFamily) ? config.widgetFamily : "large";
 
   function read(key) {
@@ -1115,13 +1116,11 @@ function createInfoSuite() {
         const ops = ["编辑", "删除"];
         if (key === "parcels") ops.push(record.status === "pending" ? "标记已取件" : "恢复为待取件");
         if (key === "trains") ops.push("添加到 iOS 日历");
-        if (key === "countdowns") ops.push("设为原单事件组件默认事件");
         const op = await choose(recordTitle(key, record), ops);
         if (op === 0) await editor(record);
         if (op === 1) await deleteRecord(key, record);
         if (op === 2 && key === "parcels") { const data = editable(key); data.items.find(p => p.id === record.id).status = record.status === "pending" ? "collected" : "pending"; write(key, data); }
         if (op === 2 && key === "trains") await addToCalendar(record);
-        if (op === 2 && key === "countdowns") { const data = editable(key); data.defaultId = record.id; write(key, data); }
       });
     }
   }
@@ -1377,8 +1376,8 @@ function createInfoSuite() {
   }
   function link(action) {
     // 指向当前脚本，无需假设其他脚本安装或命名；入口也会转发 queryParameters。
-    const scripts = { dashboard: "信息面板", parcels: "快递", trains: "火车票", countdowns: "倒计时列表" };
-    const parameter = scripts[runningKind] + (runningKind === "dashboard" ? `|${activeProfile}` : "");
+    const scripts = { dashboard: "信息面板", parcels: "快递", trains: "火车票", countdowns: "倒计时" };
+    const parameter = scripts[runningKind] + (runningKind === "dashboard" ? `|${activeProfile}` : runningKind === "countdowns" && countdownSelection ? `|${countdownSelection}` : "");
     return `scriptable:///run?scriptName=${encodeURIComponent(Script.name())}&remoteScript=${encodeURIComponent(parameter)}&infoAction=${encodeURIComponent(action)}`;
   }
   function section(key, settings, now = new Date(), group = null) {
@@ -1437,9 +1436,31 @@ function createInfoSuite() {
       if (row.detail && family !== "small" && m.columns !== 2) { line.addSpacer(6); addText(line, L.truncate(row.detail, 24), Font.systemFont(m.font - 1), colors.secondary); }
     }
   }
+  function renderSelectedCountdown(family, colors) {
+    const widget = new ListWidget(); widget.setPadding(12, 12, 12, 12); widget.backgroundColor = colors.background;
+    widget.url = link("countdowns");
+    const nextDay = new Date(); nextDay.setHours(24, 0, 0, 0); widget.refreshAfterDate = nextDay;
+    const state = read("countdowns"), event = state.data.events.find(e => e.name === countdownSelection);
+    if (state.warning) { addText(widget, state.warning, Font.systemFont(10), colors.secondary); widget.addSpacer(4); }
+    if (!event) {
+      addText(widget, "找不到事件", Font.semiboldSystemFont(17), colors.text);
+      widget.addSpacer(6); addText(widget, `“${L.truncate(countdownSelection, 18)}”不存在，请检查组件参数`, Font.systemFont(11), colors.secondary);
+      return widget;
+    }
+    try {
+      const occurrence = L.countdownEvent(event);
+      widget.addSpacer(); addText(widget, event.text || event.name, Font.semiboldSystemFont(17), colors.text);
+      if (occurrence.age !== undefined) { widget.addSpacer(4); addText(widget, `今年满 ${occurrence.age} 岁`, Font.systemFont(12), colors.secondary); }
+      widget.addSpacer(6); addText(widget, String(Math.abs(occurrence.days)), Font.boldRoundedSystemFont(family === "small" ? 36 : 44), colors.accent);
+      addText(widget, L.dayText(occurrence.days), Font.systemFont(12), colors.secondary);
+      widget.addSpacer(4); addText(widget, `${L.countdownType(event)} · ${occurrence.nextDate}`, Font.systemFont(11), colors.secondary); widget.addSpacer();
+    } catch (error) { addText(widget, String(error.message || error), Font.systemFont(12), colors.secondary); }
+    return widget;
+  }
   function render(kind, family = config.widgetFamily || "large") {
     const supported = ["small", "medium", "large"].includes(family);
     const settingsState = read("settings"), settings = settingsState.data, colors = palette(settings.theme);
+    if (kind === "countdowns" && countdownSelection && supported) return renderSelectedCountdown(family, colors);
     if (kind === "dashboard" && supported) {
       const profile = settings.profiles[activeProfile];
       const sections = profile.modules.filter(m => m.enabled).flatMap(module => {
@@ -1524,6 +1545,7 @@ function createInfoSuite() {
   async function run(kind) {
     runningKind = kind;
     const parameter = String(args.widgetParameter || "").trim();
+    countdownSelection = kind === "countdowns" ? parameter : "";
     let parameterError = "";
     const calibrating = kind === "dashboard" && parameter === "calibrate";
     if (kind === "dashboard") {

@@ -8,10 +8,10 @@ const OWNER = "kazeyo666";
 const REPO = "scriptable_ios";
 const BRANCH = "main";
 const DEFAULT_SCRIPT = "倒计时";
-const LEGACY_NAMES = { countdown: "倒计时", "countdown-list": "倒计时列表", "parcel-list": "快递", "train-tickets": "火车票", dashboard: "信息面板" };
+const LEGACY_NAMES = { countdown: "倒计时", "countdown-list": "倒计时", "倒计时列表": "倒计时", "parcel-list": "快递", "train-tickets": "火车票", dashboard: "信息面板" };
 const canonicalName = value => Object.prototype.hasOwnProperty.call(LEGACY_NAMES, value) ? LEGACY_NAMES[value] : value;
 // 即使目录 API 和远程清单都失败，也能尝试安装当前版本的核心组件。
-const BUNDLED_SCRIPTS = ["倒计时", "倒计时列表", "信息面板", "快递", "火车票"];
+const BUNDLED_SCRIPTS = ["倒计时", "信息面板", "快递", "火车票"];
 const parameter = String(args.widgetParameter || args.queryParameters?.remoteScript || "").trim();
 const separator = parameter.indexOf("|");
 let name = (separator < 0 ? parameter : parameter.slice(0, separator)).trim()
