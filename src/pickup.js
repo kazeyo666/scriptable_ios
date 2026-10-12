@@ -52,6 +52,7 @@ async function runPickupWidget() {
       settings = normalizeSettings(settings.base, settings.token);
       request = new Request(`${settings.base}/api/latest?key=${encodeURIComponent(settings.token)}`);
       request.timeoutInterval = 15;
+      request.headers = { Accept: "application/json", "User-Agent": "Scriptable-Pickup-Check/1.0" };
       const raw = await request.loadJSON();
       if (request.response.statusCode !== 200) throw Error("HTTP");
       const data = typeof raw === "string" ? JSON.parse(raw) : raw;

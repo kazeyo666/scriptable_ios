@@ -73,3 +73,16 @@ test("入口能安装和执行多多买菜取件码且保留钥匙串配置", as
   assert.ok(h.files.has("/docs/多多买菜取件码.js")); assert.match(h.text(), /0076/);
   assert.equal(h.keychain.get(settingKey), configured[settingKey]);
 });
+
+test("Worker拒绝默认请求头时，组件使用已验证的JSON请求头读取", async () => {
+  const h = harness({ keychain: configured });
+  h.context.Request = class {
+    constructor() { this.response = { statusCode: 403 }; }
+    async loadJSON() {
+      if (this.headers?.Accept !== "application/json" || this.headers?.["User-Agent"] !== "Scriptable-Pickup-Check/1.0") throw Error("request rejected");
+      this.response.statusCode = 200; return payload;
+    }
+  };
+  await h.evaluate(source);
+  assert.match(h.text(), /0076/); assert.doesNotMatch(h.text(), /连接失败/);
+});
