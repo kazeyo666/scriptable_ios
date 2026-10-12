@@ -1,109 +1,95 @@
-// 多多买菜 Worker 只读组件；地址与 READ_TOKEN 仅由手机本地保存。
-async function runPickupWidget() {
-  const title = "多多买菜取件码";
+// 多多买菜只读提供器：与手动快递记录分开保存，合并展示。
+function createPickupProvider(cachePath) {
   const settingKey = "kazeyo-pdd-pickup-read-config-v1";
-  const query = args.queryParameters || {};
-  const family = ["small", "medium", "large"].includes(query.infoFamily) ? query.infoFamily
-    : ["small", "medium", "large"].includes(config.widgetFamily) ? config.widgetFamily : "large";
-  const urlFor = action => `scriptable:///run?scriptName=${encodeURIComponent(Script.name())}&remoteScript=${encodeURIComponent(title)}&infoAction=${action}&infoFamily=${family}`;
-  let settings = null;
-  try { if (Keychain.contains(settingKey)) settings = JSON.parse(Keychain.get(settingKey)); } catch (_) { /* 损坏配置可重新填写 */ }
+  const fm = FileManager.local();
   function normalizeSettings(address, token) {
     const base = String(address || "").trim().replace(/\/+$/, "");
-    // 只接受 HTTPS 根地址，防止旧 query 中留下令牌或拼接到错误路径。
     if (!/^https:\/\/[a-zA-Z0-9.-]+(?::\d+)?$/.test(base)) throw Error("请填写 HTTPS Worker 根地址，例如 https://你的名称.workers.dev/");
-    const key = String(token || "").trim();
-    if (!key) throw Error("请填写 READ_TOKEN");
+    const key = String(token || "").trim(); if (!key) throw Error("请填写 READ_TOKEN");
     return { base, token: key };
   }
+  function settings() {
+    try {
+      if (!Keychain.contains(settingKey)) return null;
+      const saved = JSON.parse(Keychain.get(settingKey));
+      return normalizeSettings(saved.base, saved.token);
+    } catch (_) { return null; }
+  }
+  function packages(value) {
+    if (!Array.isArray(value)) throw Error("packages");
+    return value.map(item => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("package");
+      const code = typeof item.code === "string" ? item.code.trim()
+        : typeof item.code === "number" && Number.isFinite(item.code) ? String(item.code) : "";
+      if (!code) throw Error("code");
+      return { company: typeof item.company === "string" && item.company.trim() ? item.company.trim() : "多多买菜", code };
+    });
+  }
+  let state = { packages: [], warning: "", updatedAt: "" };
+  if (settings() && fm.fileExists(cachePath)) {
+    try {
+      const saved = JSON.parse(fm.readString(cachePath));
+      if (Date.now() - Date.parse(saved.fetchedAt) <= 30 * 60000) {
+        state = { packages: packages(saved.packages), warning: "", updatedAt: saved.updatedAt || "" };
+      } else state.warning = "多多买菜缓存已过期，请刷新";
+    } catch (_) { state.warning = "多多买菜缓存不可用，请刷新"; }
+  }
   async function configure() {
-    let values = [settings?.base || "", ""];
+    const old = settings(); let values = [old?.base || "", ""];
     while (true) {
-      const form = new Alert(); form.title = "连接多多买菜 Worker";
+      const form = new Alert(); form.title = "多多买菜连接设置";
       form.message = "填写 Worker 根地址和 READ_TOKEN。配置保存在手机钥匙串；不要填写 WRITE_TOKEN 或拼多多 Cookie。修改时令牌留空可沿用原值。";
       form.addTextField("Worker 地址", values[0]); form.addSecureTextField("READ_TOKEN", values[1]);
       form.addAction("保存并读取"); form.addCancelAction("取消");
       if (await form.presentAlert() < 0) return false;
       values = [form.textFieldValue(0), form.textFieldValue(1)];
       try {
-        const next = normalizeSettings(values[0], values[1] || settings?.token);
-        Keychain.set(settingKey, JSON.stringify(next)); settings = next; return true;
+        const next = normalizeSettings(values[0], values[1] || old?.token);
+        Keychain.set(settingKey, JSON.stringify(next)); return true;
       } catch (error) {
         const warning = new Alert(); warning.title = "请检查连接设置"; warning.message = error.message;
         warning.addAction("重新填写"); await warning.presentAlert();
       }
     }
   }
-  if (config.runsInApp) {
-    if (!settings || query.infoAction === "pickup-settings") {
-      if (!await configure()) { Script.complete(); return; }
-    } else if (query.infoAction !== "refresh") {
-      const menu = new Alert(); menu.title = title;
-      menu.addAction("刷新并预览"); menu.addAction("修改连接设置"); menu.addCancelAction("取消");
-      const action = await menu.presentSheet();
-      if (action < 0 || action === 1 && !await configure()) { Script.complete(); return; }
-    }
-  }
-  let packages = [], updatedAt = "", message = "", failed = false;
-  if (!settings) message = "请先在 Scriptable 中运行本脚本，填写 Worker 地址和 READ_TOKEN";
-  else {
+  async function refresh() {
+    const connection = settings();
+    if (!connection) { state = { packages: [], warning: "", updatedAt: "" }; return; }
     let request;
     try {
-      settings = normalizeSettings(settings.base, settings.token);
-      request = new Request(`${settings.base}/api/latest?key=${encodeURIComponent(settings.token)}`);
+      request = new Request(`${connection.base}/api/latest?key=${encodeURIComponent(connection.token)}`);
       request.timeoutInterval = 15;
       request.headers = { Accept: "application/json", "User-Agent": "Scriptable-Pickup-Check/1.0" };
       const raw = await request.loadJSON();
       if (request.response.statusCode !== 200) throw Error("HTTP");
       const data = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (!data || !Array.isArray(data.packages)) throw Error("packages");
-      packages = data.packages.map(item => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) throw Error("package");
-        const code = typeof item.code === "string" ? item.code.trim()
-          : typeof item.code === "number" && Number.isFinite(item.code) ? String(item.code) : "";
-        if (!code) throw Error("code");
-        return { company: typeof item.company === "string" && item.company.trim() ? item.company.trim() : "多多买菜", code };
-      });
-      if (data.updatedAt) {
-        const date = new Date(data.updatedAt);
-        if (!Number.isNaN(date.getTime())) updatedAt = `数据更新 ${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-      }
+      const rows = packages(data?.packages);
+      const date = new Date(data.updatedAt);
+      state = { packages: rows, warning: "", updatedAt: Number.isNaN(date.getTime()) ? "" : date.toISOString() };
+      // 缓存仅保存显示数据，不保存地址或令牌，也不覆盖手动快递数据库。
+      try { fm.writeString(cachePath, JSON.stringify({ ...state, fetchedAt: new Date().toISOString() })); } catch (_) { /* 存储失败不影响本次显示 */ }
     } catch (_) {
-      // 请求异常可能包含完整 URL；不记录或展示异常原文、令牌或 Worker 响应。
-      failed = true; packages = [];
       const status = request?.response?.statusCode;
-      message = status === 401 || status === 403 ? `读取被拒绝（HTTP ${status}），请检查 READ_TOKEN 和 Worker 访问设置` : "读取失败，请检查地址、读取令牌和网络";
+      state = { packages: [], updatedAt: "", warning: status === 401 || status === 403
+        ? `多多买菜读取被拒绝（HTTP ${status}）` : "多多买菜读取失败，请刷新或检查连接设置" };
+      // 失败时不展示旧取件码；本地手动记录继续显示。
+      try { if (fm.fileExists(cachePath)) fm.remove(cachePath); } catch (_) { /* 本次仍不使用旧缓存 */ }
     }
   }
-  const widget = new ListWidget(); widget.setPadding(12, 12, 12, 12); widget.backgroundColor = new Color("#142137");
-  widget.url = urlFor(family === "small" && settings ? "refresh" : "pickup-settings");
-  widget.refreshAfterDate = config.runsInApp ? new Date() : new Date(Date.now() + (failed ? 5 : 10) * 60000);
-  function text(parent, value, size, color = "#FFFFFF", bold = false) {
-    const label = parent.addText(value); label.font = bold ? Font.semiboldSystemFont(size) : Font.systemFont(size);
-    label.textColor = new Color(color); label.lineLimit = 1; label.minimumScaleFactor = 0.65; return label;
+  function merged(localItems) {
+    const local = localItems.filter(p => p.status === "pending");
+    const seen = new Set(), rows = [];
+    for (const remote of state.packages) {
+      const item = local.find(p => p.company === remote.company && p.code === remote.code)
+        || { ...remote, station: "多多买菜", note: "", status: "pending" };
+      const key = JSON.stringify([item.company, item.code]);
+      if (!seen.has(key)) { rows.push(item); seen.add(key); }
+    }
+    for (const item of local) {
+      const key = JSON.stringify([item.company, item.code]);
+      if (!seen.has(key)) { rows.push(item); seen.add(key); }
+    }
+    return rows;
   }
-  const header = widget.addStack(); header.layoutHorizontally(); header.centerAlignContent();
-  text(header, title, family === "large" ? 16 : 12, "#FFFFFF", true); header.addSpacer();
-  if (settings) text(header, "刷新", 10, "#AAB8CB").url = urlFor("refresh");
-  widget.addSpacer(6);
-  text(widget, failed ? "连接失败" : settings ? `${packages.length} 件待取` : "未配置", 11, "#AAB8CB");
-  widget.addSpacer(8);
-  if (message || !packages.length) {
-    const label = text(widget, message || "暂无待取包裹", 14); label.lineLimit = family === "small" ? 3 : 2;
-  } else {
-    const limit = { small: 2, medium: 2, large: 6 }[family];
-    packages.slice(0, limit).forEach(item => {
-      const row = widget.addStack(); row.layoutHorizontally(); row.centerAlignContent();
-      text(row, item.company.slice(0, 16), family === "small" ? 11 : 13, "#AAB8CB"); row.addSpacer(8);
-      text(row, item.code, family === "large" ? 23 : 19, "#FFFFFF", true); widget.addSpacer(family === "large" ? 5 : 3);
-    });
-    if (packages.length > limit) text(widget, `另有 ${packages.length - limit} 件 · 大号显示更多`, 10, "#AAB8CB");
-  }
-  widget.addSpacer();
-  if (updatedAt) text(widget, updatedAt, 10, "#AAB8CB");
-  if (family !== "small") { const setting = text(widget, "连接设置", 10, "#AAB8CB"); setting.url = urlFor("pickup-settings"); }
-  Script.setWidget(widget);
-  if (config.runsInApp) await widget[{ small: "presentSmall", medium: "presentMedium", large: "presentLarge" }[family]]();
-  Script.complete();
+  return { configure, refresh, merged, snapshot: () => state, configured: () => Boolean(settings()) };
 }
-await runPickupWidget();

@@ -33,7 +33,7 @@ dompling 的物流示例依赖账户 Cookie/BoxJS，不能当作官方稳定接�
 
 ## 兼容与扩展
 
-`src/` 是开发源码，五个组件由构建工具生成完整 `.js` 并提交到 `scripts/`。手机不依赖公共目录、Node 或 DOM。原入口的发现、全量下载、缓存、安装功能保留；补充异常响应检查和管理跳转参数转发。原倒计时管理功能、数据库路径和基础字段保留，交互菜单精简；新增可选生日历法与闰月字段，并共用生日计算逻辑。
+`src/` 是开发源码，四个组件由构建工具生成完整 `.js` 并提交到 `scripts/`。手机不依赖公共目录、Node 或 DOM。原入口的发现、全量下载、缓存、安装功能保留；补充异常响应检查和管理跳转参数转发。原倒计时管理功能、数据库路径和基础字段保留，交互菜单精简；新增可选生日历法与闰月字段，并共用生日计算逻辑。
 
 新组件的数据源和渲染逻辑分离，单源错误不会破坏其他模块。用户数据和代码缓存分离，更新只写 `.js`，不清理 JSON。直接组件无需联网，入口仍按原授权行为每次同步全部脚本。
 
@@ -55,4 +55,4 @@ dompling 的物流示例依赖账户 Cookie/BoxJS，不能当作官方稳定接�
 
 ## 用户已部署的取件码 Worker
 
-新增「多多买菜取件码」是读取用户已经打通的 Worker `/api/latest`，直接显示现有 `packages` 的 `company`、`code` 和 `updatedAt`，不从拼多多或短信抓取。READ_TOKEN 在 Scriptable 钥匙串配置，不写入公开仓库；使用 [Keychain](https://docs.scriptable.app/keychain/) 与 [Request](https://docs.scriptable.app/request/) 原生 API。
+「快递」与信息面板的快递栏读取用户已经打通的 Worker `/api/latest`，把现有 `packages` 的 `company`、`code` 与手动快递合并显示，不从拼多多或短信抓取。READ_TOKEN 在 Scriptable 钥匙串配置，不写入公开仓库；使用 [Keychain](https://docs.scriptable.app/keychain/) 与 [Request](https://docs.scriptable.app/request/) 原生 API。

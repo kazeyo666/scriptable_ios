@@ -3,6 +3,7 @@ import vm from "node:vm";
 import assert from "node:assert/strict";
 
 export const logicSource = readFileSync(new URL("../src/logic.js", import.meta.url), "utf8");
+export const pickupSource = readFileSync(new URL("../src/pickup.js", import.meta.url), "utf8");
 export const runtimeSource = readFileSync(new URL("../src/runtime.js", import.meta.url), "utf8");
 export const dashboardSource = readFileSync(new URL("../src/dashboard.js", import.meta.url), "utf8");
 export const backgroundSource = readFileSync(new URL("../src/background.js", import.meta.url), "utf8");
@@ -114,7 +115,7 @@ export function harness(options = {}) {
           return options.manifest ?? JSON.parse(readFileSync(new URL("../scripts/manifest.json", import.meta.url), "utf8"));
         }
         if (options.apiError) throw Error("directory unavailable");
-        return options.entries || ["倒计时", "快递", "火车票", "信息面板", "多多买菜取件码"].map(name => ({ type: "file", name: name + ".js" }));
+        return options.entries || ["倒计时", "快递", "火车票", "信息面板"].map(name => ({ type: "file", name: name + ".js" }));
       }
       async loadString() {
         if (options.offline) throw Error("offline");
@@ -123,7 +124,7 @@ export function harness(options = {}) {
       }
     },
   });
-  const api = vm.runInContext(logicSource + "\n" + geometrySource + "\n" + backgroundSource + "\n" + calibrationSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,geometry:InfoWidgetGeometry,detectCalibration:findInfoCalibrationRect})", context);
+  const api = vm.runInContext(logicSource + "\n" + geometrySource + "\n" + backgroundSource + "\n" + calibrationSource + "\n" + dashboardSource + "\n" + pickupSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,geometry:InfoWidgetGeometry,detectCalibration:findInfoCalibrationRect})", context);
   return { ...api, keychain, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, previews, queue, context,
     evaluate: source => vm.runInContext(`(async()=>{${source}\n})()`, context),
     get rendered() { return rendered; }, get complete() { return complete; }, get calendarReads() { return calendarReads; },

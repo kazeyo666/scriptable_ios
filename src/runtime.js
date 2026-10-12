@@ -9,6 +9,7 @@ function createInfoSuite() {
   const files = { parcels: "parcels.json", trains: "trains.json", settings: "dashboard.json", calendar: "calendar-cache.json" };
   const pathFor = key => key === "countdowns"
     ? fm.joinPath(fm.documentsDirectory(), "scriptable-countdown-events.json") : fm.joinPath(root, files[key]);
+  const pickup = createPickupProvider(fm.joinPath(root, "pdd-pickup-cache.json"));
   const uuid = () => UUID.string();
   const nowISO = () => new Date().toISOString();
   let activeProfile = "default";
@@ -203,8 +204,10 @@ function createInfoSuite() {
       actions.push(...slice.map(item => L.truncate(recordTitle(key, item), 44)));
       if ((page + 1) * 15 < items.length) actions.push("下一页");
       if (page > 0) actions.push("上一页");
+      if (key === "parcels") actions.push("刷新取件码", "多多买菜连接设置");
       if (runningKind !== "dashboard") actions.push("面板设置与备份");
-      const result = await choose(`${labels[key]}管理`, actions, `${state.warning || "点选记录可编辑或操作。"} 共 ${items.length} 条${items.length > 15 ? `，第 ${page + 1} 页` : ""}。`);
+      const remoteDetail = key === "parcels" && pickup.configured() ? `\n多多买菜：${pickup.snapshot().warning || (pickup.snapshot().packages.map(p => `${p.company} ${p.code}`).join("；") || "暂无待取包裹")}` : "";
+      const result = await choose(`${labels[key]}管理`, actions, `${state.warning || "点选记录可编辑或操作。"} 共 ${items.length} 条${items.length > 15 ? `，第 ${page + 1} 页` : ""}。${remoteDetail}`);
       if (result < 0) return;
       await guarded(async () => {
         if (key === "countdowns") {
@@ -215,6 +218,8 @@ function createInfoSuite() {
           if (result === 0) return await editor(null);
           if (result === 1) return await preview(key);
         }
+        if (actions[result] === "刷新取件码") { await pickup.refresh(); return await preview(key); }
+        if (actions[result] === "多多买菜连接设置") { if (await pickup.configure()) await pickup.refresh(); return; }
         if (actions[result] === "批量导入 JSON") return await importRecords(key);
         if (actions[result] === "面板设置与备份") return await dashboardMenu();
         if (actions[result] === "下一页") { page++; return; }
@@ -491,11 +496,12 @@ function createInfoSuite() {
   function section(key, settings, now = new Date(), group = null) {
     const state = read(key), data = state.data; let rows = [], hint = state.warning;
     const providers = {
-      parcels: value => L.parcels(value).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · "), kind: "parcel", code: p.code, company: p.company, station: p.station })),
+      parcels: value => pickup.merged(L.parcels(value)).map(p => ({ main: `${p.code}  ${p.company}`, detail: [p.station, p.note].filter(Boolean).join(" · "), kind: "parcel", code: p.code, company: p.company, station: p.station })),
       trains: value => L.trains(value, now.getTime()).map(t => ({ main: `${t.date.slice(5).replace("-", "/")} ${t.from}→${t.to}`, detail: `${t.number} · ${t.time} · ${t.seat || "座位未填"}`, lines: 2 })),
       countdowns: value => (group ? L.countdownGroups(value, now)[group] : L.countdowns(value, now)).map(e => ({ main: `${L.countdownCaption(e)}：${L.dayText(e.days)}`, detail: `${L.countdownType(e)} · ${e.nextDate}`, kind: "countdown", name: e.name, age: e.age, days: e.days })),
     };
     if (providers[key]) rows = providers[key](data);
+    if (key === "parcels" && pickup.snapshot().warning) hint = [hint, pickup.snapshot().warning].filter(Boolean).join(" · ");
     if (key === "calendar") {
       if (!settings.calendar.enabled) hint = "未启用日历，请在 App 内授权";
       else {
@@ -510,7 +516,7 @@ function createInfoSuite() {
       }
     }
     if (hint) rows = [{ main: hint, detail: "", status: true }, ...rows];
-    return { id: key, group, title: group === "birthdays" ? "生日" : group === "other" ? "其他倒计时" : labels[key], count: key === "parcels" ? L.parcels(data).length : rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: key === "countdowns" ? 3 : 20 };
+    return { id: key, group, title: group === "birthdays" ? "生日" : group === "other" ? "其他倒计时" : labels[key], count: rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: key === "countdowns" ? 3 : 20 };
   }
   function displaySections(key, settings, now = new Date()) {
     if (key !== "countdowns") return [section(key, settings, now)];
@@ -668,6 +674,14 @@ function createInfoSuite() {
       if (["", "default", "compact", "calibrate"].includes(parameter)) activeProfile = calibrating ? "default" : parameter || "default";
       else parameterError = "面板参数只能为 default、compact 或校准用 calibrate";
     }
+    const wantsParcels = kind === "parcels" || kind === "dashboard" && !calibrating && !parameterError
+      && read("settings").data.profiles[activeProfile].modules.some(m => m.id === "parcels" && m.enabled);
+    if (wantsParcels) await pickup.refresh();
+    if (config.runsInApp && ["pickup-settings", "pickup-connect"].includes(query.infoAction)) {
+      if (await pickup.configure()) await pickup.refresh();
+      await presentPreview(kind, ["small", "medium", "large"].includes(query.infoFamily) ? query.infoFamily : appPreviewFamily);
+      Script.complete(); return;
+    }
     if (config.runsInWidget) {
       if (calibrating) Script.setWidget(renderInfoCalibrationWidget());
       else if (parameterError) {
@@ -697,5 +711,5 @@ function createInfoSuite() {
     Script.complete();
   }
   // 扩展点：新增模块时在逻辑模块清单、section 数据提供器、renderSection 渲染层注册。
-  return { run, read, write, editable, render, section, backupObject, restoreBackup, receiveParcel, refreshCalendar };
+  return { run, read, write, editable, render, section, backupObject, restoreBackup, receiveParcel, refreshCalendar, pickup };
 }
