@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { harness, estimatedHeight } from "./helpers.mjs";
 const source = readFileSync(new URL("../scripts/多多买菜取件码.js", import.meta.url), "utf8");
-const settingKey = "scriptable-pdd-pickup-read-config-v1";
+const settingKey = "kazeyo-pdd-pickup-read-config-v1";
 const settings = { base: "https://example.workers.dev", token: "test-read-token+&" };
 const configured = { [settingKey]: JSON.stringify(settings) };
 const payload = { packages: [{ company: "多多买菜", code: "0076" }, { company: "驿站", code: 1234 }], updatedAt: "2026-10-12T01:05:00Z" };
@@ -85,4 +85,13 @@ test("Worker拒绝默认请求头时，组件使用已验证的JSON请求头读�
   };
   await h.evaluate(source);
   assert.match(h.text(), /0076/); assert.doesNotMatch(h.text(), /连接失败/);
+});
+
+
+test("钥匙串模拟拒绝保留前缀，组件首次配置使用合法键名完成保存", async () => {
+  const h = harness({ app: true, responses: [{ action: 0, fields: [settings.base, settings.token] }], pickupResponse: payload });
+  for (const method of ["contains", "get", "set"]) assert.throws(() => h.context.Keychain[method]("scriptable-reserved", "x"), /reserved/);
+  await h.evaluate(source);
+  assert.equal(h.keychain.size, 1); assert.ok(h.keychain.has(settingKey));
+  assert.equal(h.dialogs.length, 1); assert.match(h.text(), /0076/);
 });

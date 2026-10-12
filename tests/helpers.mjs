@@ -77,8 +77,15 @@ export function harness(options = {}) {
     getImage() { return { size: this.size, operations: this.operations }; }
   }
   const keychain = new Map(Object.entries(options.keychain || {}));
+  const validateKeychainKey = key => {
+    if (String(key).toLowerCase().startsWith("scriptable")) throw Error("Keychain prefix 'scriptable' is reserved");
+  };
   const context = vm.createContext({
-    Keychain: { contains: key => keychain.has(key), get: key => keychain.get(key), set: (key, value) => keychain.set(key, value) },
+    Keychain: {
+      contains(key) { validateKeychainKey(key); return keychain.has(key); },
+      get(key) { validateKeychainKey(key); return keychain.get(key); },
+      set(key, value) { validateKeychainKey(key); keychain.set(key, value); },
+    },
     console: { warn() {}, log() {}, error() {} }, Date, JSON, Map, Set,
     config: { runsInApp: options.app || false, runsInWidget: !options.app, widgetFamily: options.family || "large" },
     args: { widgetParameter: options.parameter || "", shortcutParameter: options.shortcut ?? null, queryParameters: options.query || {} },

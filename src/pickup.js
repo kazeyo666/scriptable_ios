@@ -1,7 +1,7 @@
 // 多多买菜 Worker 只读组件；地址与 READ_TOKEN 仅由手机本地保存。
 async function runPickupWidget() {
   const title = "多多买菜取件码";
-  const settingKey = "scriptable-pdd-pickup-read-config-v1";
+  const settingKey = "kazeyo-pdd-pickup-read-config-v1";
   const query = args.queryParameters || {};
   const family = ["small", "medium", "large"].includes(query.infoFamily) ? query.infoFamily
     : ["small", "medium", "large"].includes(config.widgetFamily) ? config.widgetFamily : "large";
