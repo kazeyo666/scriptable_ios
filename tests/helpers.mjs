@@ -40,6 +40,7 @@ export function harness(options = {}) {
     constructor() { this.fields = []; this.actions = []; }
     addAction(value) { this.actions.push(value); } addDestructiveAction(value) { this.actions.push(value); } addCancelAction() {}
     addTextField(label, value) { this.fields.push(value); }
+    addSecureTextField(label, value) { this.fields.push(value); }
     textFieldValue(index) { return this.fields[index]; }
     next() {
       assert.equal(context.config.runsInApp, true, "Widget 不得弹出对话框");
@@ -75,7 +76,9 @@ export function harness(options = {}) {
     fillRect(rect) { this.operations.push({ color: this.fillColor, rect }); }
     getImage() { return { size: this.size, operations: this.operations }; }
   }
+  const keychain = new Map(Object.entries(options.keychain || {}));
   const context = vm.createContext({
+    Keychain: { contains: key => keychain.has(key), get: key => keychain.get(key), set: (key, value) => keychain.set(key, value) },
     console: { warn() {}, log() {}, error() {} }, Date, JSON, Map, Set,
     config: { runsInApp: options.app || false, runsInWidget: !options.app, widgetFamily: options.family || "large" },
     args: { widgetParameter: options.parameter || "", shortcutParameter: options.shortcut ?? null, queryParameters: options.query || {} },
@@ -97,13 +100,14 @@ export function harness(options = {}) {
     Request: class {
       constructor(url) { this.url = url; requests.push(url); this.response = { statusCode: options.status || 200 }; }
       async loadJSON() {
+        if (this.url.includes("/api/latest?")) { if (options.offline) throw Error("offline"); return options.pickupResponse ?? { packages: [] }; }
         if (options.offline) throw Error("offline");
         if (this.url.includes("/manifest.json")) {
           if (options.manifestError) throw Error("manifest unavailable");
           return options.manifest ?? JSON.parse(readFileSync(new URL("../scripts/manifest.json", import.meta.url), "utf8"));
         }
         if (options.apiError) throw Error("directory unavailable");
-        return options.entries || ["倒计时", "快递", "火车票", "信息面板"].map(name => ({ type: "file", name: name + ".js" }));
+        return options.entries || ["倒计时", "快递", "火车票", "信息面板", "多多买菜取件码"].map(name => ({ type: "file", name: name + ".js" }));
       }
       async loadString() {
         if (options.offline) throw Error("offline");
@@ -113,7 +117,7 @@ export function harness(options = {}) {
     },
   });
   const api = vm.runInContext(logicSource + "\n" + geometrySource + "\n" + backgroundSource + "\n" + calibrationSource + "\n" + dashboardSource + "\n" + runtimeSource + "\n({logic:InfoLogic,suite:createInfoSuite(),renderDashboard:renderInfoDashboard,geometry:InfoWidgetGeometry,detectCalibration:findInfoCalibrationRect})", context);
-  return { ...api, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, previews, queue, context,
+  return { ...api, keychain, files, nodes, dialogs, requests, exported, calendars, webviews, drawings, previews, queue, context,
     evaluate: source => vm.runInContext(`(async()=>{${source}\n})()`, context),
     get rendered() { return rendered; }, get complete() { return complete; }, get calendarReads() { return calendarReads; },
     text() { const values = []; const visit = node => { if (node.kind === "text") values.push(node.value); for (const child of node.children || []) visit(child); }; visit(rendered); return values.join("\n"); },
