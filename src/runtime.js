@@ -312,17 +312,17 @@ function createInfoSuite() {
   async function configureModules() {
     while (true) {
       const data = editable("settings"), profile = data.profiles[activeProfile];
-      const actions = profile.modules.map((m, i) => `${i + 1}. ${m.enabled ? "✓" : "○"} ${labels[m.id]} · ${m.id === "countdowns" ? "每组" : "最多"} ${m.id === "countdowns" ? Math.min(3, m.maxItems) : m.maxItems} 条`);
+      const actions = profile.modules.map((m, i) => `${i + 1}. ${m.enabled ? "✓" : "○"} ${labels[m.id]} · ${m.id === "countdowns" ? "每组" : "最多"} ${m.id === "countdowns" || m.id === "parcels" ? Math.min(3, m.maxItems) : m.maxItems} ${m.id === "parcels" ? "行（每行4个）" : "条"}`);
       actions.push(profile.hideEmpty ? "空模块：自动隐藏（点击切换）" : "空模块：展示（点击切换）");
       const index = await choose("模块设置", actions, `当前配置：${activeProfile === "default" ? "默认" : "紧凑"}。点选模块，一页调整条数、顺序和显示状态。`);
       if (index < 0) return;
       if (index === profile.modules.length) { profile.hideEmpty = !profile.hideEmpty; write("settings", data); continue; }
-      const module = profile.modules[index], limit = module.id === "countdowns" ? 3 : 20;
+      const module = profile.modules[index], limit = module.id === "countdowns" || module.id === "parcels" ? 3 : 20;
       let values = [String(Math.min(limit, module.maxItems)), String(index + 1)];
       while (true) {
         const alert = new Alert(); alert.title = labels[module.id];
-        alert.message = `当前${module.enabled ? "启用" : "禁用"}。${module.id === "countdowns" ? "生日和其他各自最多三条。" : "实际条数受组件空间限制。"}`;
-        alert.addTextField(`最多条数 1—${limit}`, values[0]); alert.addTextField(`显示顺序 1—${profile.modules.length}`, values[1]);
+        alert.message = `当前${module.enabled ? "启用" : "禁用"}。${module.id === "countdowns" ? "生日和其他各自最多三条。" : module.id === "parcels" ? "每行最多4个取件码，最多3行，共12个。" : "实际条数受组件空间限制。"}`;
+        alert.addTextField(`最多${module.id === "parcels" ? "行数" : "条数"} 1—${limit}`, values[0]); alert.addTextField(`显示顺序 1—${profile.modules.length}`, values[1]);
         alert.addAction("保存设置"); alert.addAction(module.enabled ? "禁用并保存" : "启用并保存"); alert.addCancelAction("取消");
         const action = await alert.presentAlert(); if (action < 0) break;
         values = [alert.textFieldValue(0).trim(), alert.textFieldValue(1).trim()];
@@ -501,6 +501,11 @@ function createInfoSuite() {
       countdowns: value => (group ? L.countdownGroups(value, now)[group] : L.countdowns(value, now)).map(e => ({ main: `${L.countdownCaption(e)}：${L.dayText(e.days)}`, detail: `${L.countdownType(e)} · ${e.nextDate}`, kind: "countdown", name: e.name, age: e.age, days: e.days })),
     };
     if (providers[key]) rows = providers[key](data);
+    const parcelCount = key === "parcels" ? rows.length : 0;
+    if (key === "parcels") {
+      const codes = rows.map(row => row.code); rows = [];
+      for (let i = 0; i < codes.length; i += 4) rows.push({ kind: "parcelGrid", codes: codes.slice(i, i + 4) });
+    }
     if (key === "parcels" && pickup.snapshot().warning) hint = [hint, pickup.snapshot().warning].filter(Boolean).join(" · ");
     if (key === "calendar") {
       if (!settings.calendar.enabled) hint = "未启用日历，请在 App 内授权";
@@ -516,7 +521,7 @@ function createInfoSuite() {
       }
     }
     if (hint) rows = [{ main: hint, detail: "", status: true }, ...rows];
-    return { id: key, group, title: group === "birthdays" ? "生日" : group === "other" ? "其他倒计时" : labels[key], count: rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: key === "countdowns" ? 3 : 20 };
+    return { id: key, group, title: group === "birthdays" ? "生日" : group === "other" ? "其他倒计时" : labels[key], count: key === "parcels" ? parcelCount : rows.length - (hint ? 1 : 0), rows, warning: Boolean(hint), maxItems: key === "countdowns" || key === "parcels" ? 3 : 20 };
   }
   function displaySections(key, settings, now = new Date()) {
     if (key !== "countdowns") return [section(key, settings, now)];
@@ -538,6 +543,17 @@ function createInfoSuite() {
     try { const icon = header.addImage(SFSymbol.named(symbols[section.id]).image); icon.imageSize = new Size(13, 13); icon.tintColor = colors.accent; header.addSpacer(5); } catch (_) { /* 系统没有此符号时保留文字 */ }
     addText(header, `${section.title}${section.count ? ` ${section.count}` : ""}${section.hidden ? ` · 另${section.hidden}条` : ""}`, Font.semiboldSystemFont(m.font), colors.text);
     for (const row of section.rows) {
+      if (row.kind === "parcelGrid") {
+        const line = card.addStack(); line.layoutHorizontally(); line.centerAlignContent(); line.size = new Size(0, m.row);
+        const width = family === "small" || m.columns === 2 ? 102 : Math.max(220, Device.screenSize().width - 78);
+        row.codes.forEach((code, index) => {
+          if (index) line.addSpacer(4);
+          const cell = line.addStack(); cell.size = new Size((width - 12) / 4, 0);
+          const label = addText(cell, code, Font.boldRoundedSystemFont(family === "small" ? 10 : 14), colors.text);
+          label.minimumScaleFactor = 0.35;
+        });
+        continue;
+      }
       if (row.lines === 2) {
         const item = card.addStack(); item.layoutVertically(); item.size = new Size(0, m.row * 2);
         addText(item, L.truncate(row.main, family === "small" ? 20 : 42), Font.systemFont(m.font), colors.text);
@@ -580,7 +596,7 @@ function createInfoSuite() {
     if (kind === "dashboard" && supported) {
       const profile = settings.profiles[activeProfile];
       const sections = profile.modules.filter(m => m.enabled).flatMap(module => {
-        try { return displaySections(module.id, settings).map(s => ({ ...s, maxItems: module.id === "countdowns" ? Math.min(3, module.maxItems) : module.maxItems })); }
+        try { return displaySections(module.id, settings).map(s => ({ ...s, maxItems: module.id === "countdowns" || module.id === "parcels" ? Math.min(3, module.maxItems) : module.maxItems })); }
         catch (_) { return { id: module.id, title: labels[module.id], count: 0, rows: [{ main: "此模块暂时不可用", detail: "", status: true }], maxItems: 1, warning: true }; }
       }).filter(s => !profile.hideEmpty || s.rows.length || s.warning)
         .map(s => s.rows.length ? s : { ...s, rows: [{ main: "暂无记录", detail: "", status: true }] });

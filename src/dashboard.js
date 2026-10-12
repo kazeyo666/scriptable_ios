@@ -59,13 +59,15 @@ function renderInfoDashboard({ sections, settings, family, urlFor, warning, back
   if (columnMode) { columns = widget.addStack(); columns.layoutHorizontally(); }
   const symbols = { parcels: "shippingbox", trains: "tram", calendar: "calendar", countdowns: "flag" };
   function renderRow(parent, section, row) {
-    if (row.kind === "parcel") {
-      const line = horizontal(parent, 21);
-      const code = line.addStack(); code.size = new Size(small || columnMode ? 52 : 66, 0);
-      text(code, L.truncate(row.code, 12), large ? 17 : 14, colors.text, "rounded");
-      line.addSpacer(8);
-      text(line, L.truncate(row.company, small || columnMode ? 8 : 16), large ? 13 : 10, colors.muted);
-      if (large && row.station) { line.addSpacer(); text(line, L.truncate(row.station, 8), 10, colors.muted); }
+    if (row.kind === "parcelGrid") {
+      const line = horizontal(parent, 15);
+      const width = small ? 112 : columnMode ? Math.max(108, Math.min(155, (Device.screenSize().width - 96) / 2)) : Math.max(220, Device.screenSize().width - 92);
+      row.codes.forEach((code, index) => {
+        if (index) line.addSpacer(4);
+        const cell = line.addStack(); cell.size = new Size((width - 12) / 4, 0);
+        const label = text(cell, code, large ? 12 : 9, colors.text, "rounded");
+        label.minimumScaleFactor = 0.35;
+      });
       return;
     }
     if (row.kind === "countdown") {

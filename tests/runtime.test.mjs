@@ -106,13 +106,13 @@ test("Dashboard 模块禁用、顺序、空模块和紧凑配置", async () => {
 });
 test("中文 Dashboard 配置菜单可保存模块条数、顺序和主题", async () => {
   const h = harness({ app: true, responses: [
-    4, 0, { action: 0, fields: ["5", "4"] }, -1,
+    4, 0, { action: 0, fields: ["3", "4"] }, -1,
     6, 2,
     6, 3, { action: 0, fields: ["#FF9500"] }, -1,
   ] });
   await h.suite.run("dashboard"); const settings = h.suite.read("settings").data;
   assert.equal(settings.profiles.default.modules.at(-1).id, "parcels");
-  assert.equal(settings.profiles.default.modules.at(-1).maxItems, 5);
+  assert.equal(settings.profiles.default.modules.at(-1).maxItems, 3);
   assert.deepEqual(plain(settings.theme), { mode: "dark", accent: "#FF9500" }); assert.equal(h.queue.length, 0);
 });
 for (const family of ["small", "medium", "large"]) {
@@ -409,4 +409,33 @@ test("保存退出管理后提交最新组件，刷新日期不再等待半小�
   const before = Date.now(); await h.suite.run("countdowns");
   assert.match(h.text(), /立即显示/);
   assert.ok(h.rendered.refreshAfterDate.getTime() >= before && h.rendered.refreshAfterDate.getTime() <= Date.now());
+});
+
+for (const family of ["small", "medium", "large"]) {
+  test(`${family} 快递组件和面板只显示取件码，最多4列3行12个`, async () => {
+    for (const kind of ["parcels", "dashboard"]) {
+      const h = harness({ family });
+      const items = Array.from({ length: 16 }, (_, i) => parcel(String(i), { company: "来源公司", station: "来源驿站", code: `GRID-${String(i).padStart(3, "0")}` }));
+      h.suite.write("parcels", { version: 1, items });
+      const settings = h.logic.defaults(); settings.profiles.default.modules.forEach(m => { m.enabled = m.id === "parcels"; m.maxItems = 20; });
+      h.suite.write("settings", settings); await h.suite.run(kind);
+      assert.doesNotMatch(h.text(), /来源公司|来源驿站/);
+      const rendered = h.text().match(/GRID-\d+/g) || [];
+      assert.equal(rendered.length, 12); assert.deepEqual(rendered, items.slice(0, 12).map(p => p.code));
+      const gridLines = h.nodes.filter(n => n.horizontal && n.children?.some(c => c.children?.some(t => /^GRID-\d+$/.test(t.value || ""))));
+      assert.equal(gridLines.length, 3);
+      for (const line of gridLines) assert.equal(line.children.filter(c => c.children?.some(t => /^GRID-\d+$/.test(t.value || ""))).length, 4);
+      assert.match(h.text(), /另\s*4\s*条/); assert.equal(h.suite.read("parcels").data.items.length, 16);
+      assert.ok(estimatedHeight(h.rendered) <= (family === "large" ? 311 : 141));
+    }
+  });
+}
+test("最后一行不足4个也显示完整取件码，前导零和长码保留", async () => {
+  const codes = ["0001", "4-3-1317", "12-345-6789", "0004", "0005"];
+  const h = harness(); h.suite.write("parcels", { version: 1, items: codes.map((code, i) => parcel(String(i), { code })) });
+  await h.suite.run("parcels");
+  for (const code of codes) assert.ok(h.text().includes(code));
+  assert.doesNotMatch(h.text(), /拼多多|小区驿站/);
+  const section = h.suite.section("parcels", h.logic.defaults());
+  assert.deepEqual(plain(section.rows.map(row => row.codes.length)), [4, 1]);
 });

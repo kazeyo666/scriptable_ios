@@ -31,7 +31,7 @@ test("相同公司和取件码去重并沿用本地驿站，不把已取手动�
   const h = harness({ keychain: configured, pickupResponse: { packages: [...payload.packages, payload.packages[0]] } });
   h.suite.write("parcels", { version: 1, items: [parcel("same", { company: "多多买菜", code: "0076", station: "北门" }), parcel("collected", { status: "collected", code: "8888" })] });
   await h.suite.run("parcels"); assert.equal(h.suite.section("parcels", h.logic.defaults()).count, 2);
-  assert.equal((h.text().match(/0076/g) || []).length, 1); assert.match(h.text(), /北门/); assert.doesNotMatch(h.text(), /8888/);
+  assert.equal((h.text().match(/0076/g) || []).length, 1); assert.doesNotMatch(h.text(), /北门|多多买菜|圆通/); assert.doesNotMatch(h.text(), /8888/);
 });
 test("Worker空数组清除远程待取，不删除手动记录", async () => {
   const h = harness({ keychain: configured, pickupResponse: payload }); h.suite.write("parcels", { version: 1, items: [parcel()] });

@@ -286,7 +286,7 @@ const InfoLogic = (() => {
           if (used + cost > m.height) break;
           rows.push(row); used += cost;
         }
-        return { ...s, rows, hidden: s.rows.length - rows.length, used };
+        return { ...s, rows, hidden: s.id === "parcels" && Number.isFinite(s.count) ? Math.max(0, s.count - rows.reduce((sum, row) => sum + (row.codes?.length || 0), 0)) : s.rows.length - rows.length, used };
       });
       return { plans, omittedModules: sections.length - plans.length, used: Math.max(0, ...plans.map(p => p.used)), metrics: m };
     }
@@ -307,6 +307,7 @@ const InfoLogic = (() => {
         }
       }
     }
+    for (const plan of plans) if (plan.id === "parcels" && Number.isFinite(plan.count)) plan.hidden = Math.max(0, plan.count - plan.rows.reduce((sum, row) => sum + (row.codes?.length || 0), 0));
     return { plans, omittedModules: sections.length - plans.length, used: m.height - remaining, metrics: m };
   }
   // Dashboard 用更清晰的字号层级和分区分隔线；独立列表保留原布局。
@@ -315,7 +316,7 @@ const InfoLogic = (() => {
     const metrics = { budget: (large ? 211 : medium ? 66 : 60) - (warning ? 15 : 0),
       header: large ? 16 : 14, gap: large ? 8 : 16, maxModules: large ? 4 : medium ? 2 : 1,
       columns: medium ? 2 : 1 };
-    const cost = row => row.lines === 2 ? 32 : 21;
+    const cost = row => row.kind === "parcelGrid" ? 15 : row.lines === 2 ? 32 : 21;
     const chosen = sections.slice(0, metrics.maxModules);
     const plans = chosen.map(section => ({ ...section, rows: [], hidden: section.rows.length }));
     if (metrics.columns === 2) {
@@ -344,6 +345,7 @@ const InfoLogic = (() => {
     const heights = plans.map(section => metrics.header + section.rows.reduce((sum, row) => sum + cost(row), 0));
     const used = metrics.columns === 2 ? Math.max(0, ...heights)
       : heights.reduce((a, b) => a + b, 0) + Math.max(0, plans.length - 1) * metrics.gap;
+    for (const plan of plans) if (plan.id === "parcels" && Number.isFinite(plan.count)) plan.hidden = Math.max(0, plan.count - plan.rows.reduce((sum, row) => sum + (row.codes?.length || 0), 0));
     return { plans, metrics, used, omittedModules: sections.length - plans.length };
   }
   return { clone, assert, str, dateParts, instant, daysUntil, dayText, normalizeParcel, normalizeTrain,
