@@ -24,13 +24,23 @@ async function run(options = {}) {
 test("正常解析取件码去重、保留前导零并覆盖Worker", async () => {
   const h = await run({ body: page([{ combine_track_list: [{ pick_code: "取件码：0076", shipping_name: "圆通" }, { pick_code: "0076", shipping_name: "圆通" }] }]) });
   assert.deepEqual(JSON.parse(h.requests.at(-1).body), { packages: [{ company: "圆通", code: "0076" }] });
-  assert.equal(h.done, 1); assert.match(h.logs[0], /2026-10-12-v2/); assert.doesNotMatch(h.logs.join("\n"), /test-cookie|test-upload-token/);
+  assert.equal(h.done, 1); assert.match(h.logs[0], /2026-10-13-v3/); assert.doesNotMatch(h.logs.join("\n"), /test-cookie|test-upload-token/);
 });
-for (const [name, options] of Object.entries({ empty: {}, missing_groups: { body: page(undefined) }, missing_next: { body: "<html>login</html>" }, bad_json: { body: '<script id="__NEXT_DATA__">broken</script>' }, http_error: { status: 401 }, network_error: { fetchError: true }, no_headers: { prefs: { pdd_pickup_request_v1: "{}" } }, no_codes: { body: page([{ combine_track_list: [{}] }]) } })) {
-  test(`${name} 必须上传空列表并清除旧本机记录`, async () => {
+for (const [name, options] of Object.entries({ empty: {}, missing_groups: { body: page(undefined) }, null_groups: { body: page(null) }, empty_tracks: { body: page([{ combine_track_list: [] }]) } })) {
+  test(`${name} 成功查询已无包裹时上传空列表`, async () => {
     const h = await run(options); assert.deepEqual(JSON.parse(h.requests.at(-1).body), { packages: [] });
     assert.deepEqual(JSON.parse(h.prefs.get("pdd_pickup_latest")).packages, []); assert.equal(h.done, 1);
-    assert.match(h.logs.join("\n"), /已清空Worker/); assert.doesNotMatch(h.logs.join("\n"), /test-cookie|test-upload-token/);
+    assert.match(h.logs.join("\n"), /已清空Worker/);
+  });
+}
+for (const [name, options] of Object.entries({ missing_next: { body: "<html>login</html>" }, bad_json: { body: '<script id="__NEXT_DATA__">broken</script>' }, http_error: { status: 401 }, network_error: { fetchError: true }, no_headers: { prefs: { pdd_pickup_request_v1: "{}" } }, no_codes: { body: page([{ combine_track_list: [{}] }]) }, malformed_groups: { body: page({}) }, malformed_tracks: { body: page([{}]) }, missing_result: { body: '<script id="__NEXT_DATA__">{"props":{"pageProps":{"serverData":[]}}}</script>' }, malformed_package: { body: page([{ combine_track_list: [null] }]) }, rejected_business: { body: page([]).replace('"res":{"result":', '"res":{"success":false,"result":') }, malformed_code: { body: page([{ combine_track_list: [{ pick_code: {} }] }]) } })) {
+  test(`${name} 不能当成已取件，保留旧数据且不上传`, async () => {
+    const h = await run(options);
+    assert.equal(h.requests.some(r => r.method === "POST"), false);
+    assert.equal(JSON.parse(h.prefs.get("pdd_pickup_latest")).packages[0].code, "OLD");
+    assert.equal(h.done, 1); assert.equal(h.notifications.length, 0);
+    assert.match(h.logs.join("\n"), /保留旧数据/);
+    assert.doesNotMatch(h.logs.join("\n"), /已清空Worker|test-cookie|test-upload-token/);
   });
 }
 test("上传拒绝或网络失败时不谎报已清空，done只执行一次", async () => {
