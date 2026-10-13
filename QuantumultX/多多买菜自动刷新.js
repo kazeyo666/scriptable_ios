@@ -2,12 +2,27 @@
 // pdd_pickup_worker_url: Worker根地址
 // pdd_pickup_write_token: /api/update使用的上传令牌
 (async function () {
-  const VERSION = "2026-10-13-v3";
+  const VERSION = "2026-10-13-v4";
   const log = message => console.log("[PDD自动刷新 " + VERSION + "] " + message);
   let finished = false;
   const done = () => { if (!finished) { finished = true; $done(); } };
-  const worker = String($prefs.valueForKey("pdd_pickup_worker_url") || "").trim().replace(/\/+$/, "");
-  const token = String($prefs.valueForKey("pdd_pickup_write_token") || "").trim();
+  let worker = String($prefs.valueForKey("pdd_pickup_worker_url") || "").trim().replace(/\/+$/, "");
+  let token = String($prefs.valueForKey("pdd_pickup_write_token") || "").trim();
+  // 任务URL的#参数只在Quantumult X本机使用，不会随下载请求发送到GitHub。
+  // $environment.variables从Quantumult X v1.5.6 build 918起支持。
+  const variables = typeof $environment !== "undefined" && $environment.variables || {};
+  if (variables.worker !== undefined || variables.token !== undefined) {
+    try {
+      const input = value => decodeURIComponent(String(value)).trim();
+      const nextWorker = variables.worker === undefined ? worker : input(variables.worker).replace(/\/+$/, "");
+      const nextToken = variables.token === undefined ? token : input(variables.token);
+      if (!/^https:\/\/[a-zA-Z0-9.-]+(?::\d+)?$/.test(nextWorker) || !nextToken) throw Error("configuration");
+      if ($prefs.setValueForKey(nextWorker, "pdd_pickup_worker_url") === false
+        || $prefs.setValueForKey(nextToken, "pdd_pickup_write_token") === false) throw Error("storage");
+      worker = nextWorker; token = nextToken;
+      log("连接配置已保存到Quantumult X本机；以后可移除任务URL的#参数");
+    } catch (_) { log("本地任务参数无效或保存失败；未执行刷新"); done(); return; }
+  }
   function extract(html) {
     const match = html.match(/<script\b[^>]*\bid=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script\s*>/i);
     if (!match) { log("没有__NEXT_DATA__，无法确认取件状态；保留旧数据"); return null; }
@@ -45,7 +60,7 @@
   try {
     log("开始刷新；成功查询无包裹才清空，查询异常保留旧数据");
     if (!/^https:\/\/[a-zA-Z0-9.-]+(?::\d+)?$/.test(worker) || !token) {
-      log("本机未保存有效Worker连接配置，无法上传；请使用已配置的任务脚本"); return;
+      log("本机未保存有效Worker连接配置；请在本地任务URL的#参数填写worker和token一次"); return;
     }
     let headers;
     try { headers = JSON.parse($prefs.valueForKey("pdd_pickup_request_v1") || "{}").headers; } catch (_) { /* 缺少凭据时无法判断是否已取件 */ }
