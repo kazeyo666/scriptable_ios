@@ -98,6 +98,8 @@ Quantumult X 上游定时任务见 [多多买菜自动刷新.js](QuantumultX/多
 
 Quantumult X 直接使用 GitHub 任务脚本，地址、上传令牌和已捕获的登录请求都保存在软件本地，更新脚本不需要重新填写。配置样例见 [多多买菜任务.conf](QuantumultX/多多买菜任务.conf)。已有 `$prefs` 配置时直接添加普通任务即可。
 
+**更新多多登录凭证**：在 Quantumult X 的重写资源中添加 [多多买菜登录凭证.conf](https://raw.githubusercontent.com/kazeyo666/scriptable_ios/main/QuantumultX/%E5%A4%9A%E5%A4%9A%E4%B9%B0%E8%8F%9C%E7%99%BB%E5%BD%95%E5%87%AD%E8%AF%81.conf)，启用重写及该域名的 MITM，并确保其证书已安装并信任。然后在已登录的多多中打开取件码页面，看到「登录请求已保存到本机」后，手动运行「多多买菜自动刷新」验证。捕获脚本是 [多多买菜登录凭证.js](QuantumultX/多多买菜登录凭证.js)，不是定时任务；它只保存到本机 `pdd_pickup_request_v1`，不上传 Cookie 或登录上下文，也不会主动续期。没有非空登录上下文的请求会保留原凭证；是否登录有效以随后业务查询结果为准。
+
 首次配置（Quantumult X v1.5.6 build 918及以上）：在**软件本地**任务脚本URL后临时加 `#worker=你的HTTPS根地址&token=上传令牌`，执行一次。特殊字符按URL编码填写。看到「连接配置已保存到Quantumult X本机」后，删掉URL的 `#...` 部分；以后只保留公开GitHub脚本地址。URL片段不参与下载请求，依据 [Quantumult X官方任务样例](https://raw.githubusercontent.com/crossutility/Quantumult-X/master/sample-task.js)。不要把带真实认证的本地任务配置上传GitHub。
 
 ## 火车票：多行程管理
